@@ -238,10 +238,16 @@ class PortalHandler(BaseHTTPRequestHandler):
         rows = "".join(self.render_message(principal, m) for m in messages)
         role_note = "Command audit view: all encrypted message history visible." if principal == "command" else "Principal view: sent and received messages only."
         options = "".join(f"<option>{p}</option>" for p in sorted(RECIPIENTS))
+        channel_status = "OPEN" if principal in PRINCIPALS else "CLOSED"
         return self.html_response(self.shell("Secure Coms", f"""
         <section class='lcars-hero'>
           <div class='lcars-cap'></div>
-          <div><p class='eyebrow'>Authenticated as {html.escape(principal)}</p><h1>Secure Coms</h1><p>{role_note}</p></div>
+          <div><p class='eyebrow'>STARFLEET SECURE COMMUNICATIONS — USS THESISKO</p><h1>Secure Coms</h1><p>{role_note}</p></div>
+        </section>
+        <section class='communique-status' aria-label='channel status'>
+          <span>Classification: Command Review / Restricted</span>
+          <span>Channel: {channel_status}</span>
+          <span>Session: {html.escape(self.display_name(principal))}</span>
         </section>
         <section class='comms-grid'>
           <div class='compose-panel'>
@@ -260,18 +266,40 @@ class PortalHandler(BaseHTTPRequestHandler):
         </section>
         """))
 
+    def display_name(self, principal: str):
+        return {"captain": "CAPT Jarvis", "wesley": "ENS Wesley", "command": "ADM Command"}.get(principal, principal.upper())
+
+    def insignia(self, principal: str):
+        if principal == "captain":
+            return "<span class='pips'><i></i><i></i><i></i><i></i></span>"
+        if principal == "wesley":
+            return "<span class='pips'><i></i></span>"
+        if principal == "command":
+            return "<span class='admiral-mark'>✦✦</span>"
+        return "<span class='pips'><i></i></span>"
+
+    def formatted_timestamp(self, value: str):
+        parts = value.replace("T", " ").replace("Z", " UTC").split(".", 1)
+        cleaned = parts[0]
+        digits = "".join(ch for ch in value if ch.isdigit())
+        stardate = f"SD {digits[2:7]}.{digits[7:9]}" if len(digits) >= 9 else "SD UNKNOWN"
+        return f"{stardate} / {html.escape(cleaned)}"
+
     def render_message(self, principal: str, message: dict):
-        sender = html.escape(message["sender"])
-        recipient = html.escape(message["recipient"])
+        sender_key = message["sender"]
+        recipient_key = message["recipient"]
+        sender = html.escape(self.display_name(sender_key))
+        recipient = html.escape(self.display_name(recipient_key))
         body = html.escape(message["body"])
-        timestamp = html.escape(message["created_at"])
-        direction = "audit" if principal == "command" else ("sent" if message["sender"] == principal else "received")
-        icon = {"captain": "★", "wesley": "◆", "command": "⌂"}.get(message["sender"], "•")
+        timestamp = self.formatted_timestamp(message["created_at"])
+        direction = "audit" if principal == "command" else ("sent" if sender_key == principal else "received")
+        rank_class = f"rank-{sender_key}"
+        icon = {"captain": "★", "wesley": "◆", "command": "⌂"}.get(sender_key, "•")
         return f"""
-        <article class='bubble {direction}'>
+        <article class='bubble {direction} {rank_class}'>
           <div class='avatar'>{icon}</div>
           <div class='bubble-body'>
-            <header><strong>{sender}</strong><span>to {recipient}</span><time>{timestamp}</time></header>
+            <header><span class='identity'>{self.insignia(sender_key)}<strong>{sender}</strong></span><span>to {recipient}</span><time>{timestamp}</time></header>
             <p>{body}</p>
           </div>
         </article>
@@ -283,8 +311,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         :root{{--bg:#050505;--panel:#120c05;--amber:#ff9f1a;--orange:#ff6b00;--gold:#ffd166;--peach:#ffb199;--cream:#ffe8c2;--blue:#7dd3fc;--muted:#c79257}}
         *{{box-sizing:border-box}} body{{margin:0;background:radial-gradient(circle at top right,#1b1208 0,#050505 42rem);color:var(--cream);font:16px/1.5 system-ui,sans-serif}} body:before{{content:"";position:fixed;inset:0;background:linear-gradient(90deg,#0000 0 96%,#ff9f1a22 96% 97%,#0000 97%),linear-gradient(#0000 0 96%,#ff9f1a14 96% 97%,#0000 97%);background-size:48px 48px;pointer-events:none}} main{{max-width:1180px;margin:0 auto;padding:2rem;position:relative}} h1,h2{{letter-spacing:.03em;text-transform:uppercase}} .card,.compose-panel,.history-panel,.lcars-hero{{background:linear-gradient(135deg,#160f08,#070707);border:1px solid #ff9f1a66;border-radius:26px;padding:1.5rem;margin:1rem 0;box-shadow:0 18px 45px #0009}} .eyebrow{{color:var(--gold);text-transform:uppercase;letter-spacing:.18em;font-size:.78rem;font-weight:800}} a{{color:var(--gold)}} .button,button{{background:linear-gradient(90deg,var(--amber),var(--orange));color:#120800;border:0;border-radius:999px;padding:.8rem 1.2rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em}} label{{display:block;margin:1rem 0;color:var(--gold);font-weight:700;text-transform:uppercase;font-size:.78rem;letter-spacing:.08em}} input,select,textarea{{width:100%;box-sizing:border-box;background:#080604;color:var(--cream);border:1px solid #ff9f1a88;border-radius:18px;padding:.85rem}} textarea{{resize:vertical}} .error{{color:#fecaca}}
         .lcars-hero{{display:grid;grid-template-columns:140px 1fr;gap:1.25rem;align-items:stretch;border-radius:42px 16px 16px 42px}} .lcars-cap{{min-height:145px;border-radius:34px 0 0 34px;background:linear-gradient(180deg,var(--amber) 0 38%,var(--orange) 38% 64%,var(--peach) 64%);box-shadow:inset -18px 0 #050505}} .lcars-hero h1{{font-size:clamp(2.2rem,7vw,5.5rem);line-height:.9;margin:.2rem 0;color:var(--amber)}} .lcars-hero p{{max-width:56rem}}
+        .communique-status{{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;margin:-.2rem 0 1rem;padding:.75rem 1rem;border-radius:999px;background:linear-gradient(90deg,#ff9f1a,#ff6b00 42%,#2a1705 42%);color:#130800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;box-shadow:0 14px 30px #0008}} .communique-status span:last-child{{color:var(--cream)}}
         .comms-grid{{display:grid;grid-template-columns:minmax(270px,340px) 1fr;gap:1.2rem;align-items:start}} .compose-panel{{border-radius:16px 42px 16px 42px;border-left:30px solid var(--orange)}} .history-panel{{padding:0;overflow:hidden;border-radius:42px 16px 42px 16px}} .history-head{{display:flex;justify-content:space-between;gap:1rem;background:linear-gradient(90deg,var(--orange),var(--amber));color:#120800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;padding:.85rem 1.25rem}} .thread{{padding:1.25rem;display:flex;flex-direction:column;gap:1rem}} .empty{{color:var(--muted);text-align:center}}
-        .bubble{{display:grid;grid-template-columns:48px minmax(0,1fr);gap:.75rem;max-width:82%;align-items:start}} .bubble.sent{{align-self:end;grid-template-columns:minmax(0,1fr) 48px}} .bubble.sent .avatar{{grid-column:2;grid-row:1;background:var(--gold);color:#120800}} .bubble.sent .bubble-body{{grid-column:1;grid-row:1;background:#2a1705;border-color:var(--gold)}} .bubble.received .bubble-body{{background:#111;border-color:var(--orange)}} .bubble.audit{{max-width:96%}} .avatar{{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:var(--orange);color:#130800;font-weight:1000;box-shadow:0 0 0 4px #000,0 0 0 6px #ff9f1a66}} .bubble-body{{border:1px solid #ff9f1a88;border-radius:20px;padding:.9rem 1rem;box-shadow:0 10px 24px #0008}} .bubble-body header{{display:flex;gap:.65rem;align-items:baseline;flex-wrap:wrap;color:var(--gold);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}} .bubble-body header time{{margin-left:auto;color:var(--muted);text-transform:none;letter-spacing:0}} .bubble-body p{{white-space:pre-wrap;margin:.55rem 0 0}}
+        .bubble{{display:grid;grid-template-columns:48px minmax(0,1fr);gap:.75rem;max-width:82%;align-items:start}} .bubble.sent{{align-self:end;grid-template-columns:minmax(0,1fr) 48px}} .bubble.sent .avatar{{grid-column:2;grid-row:1;background:var(--gold);color:#120800}} .bubble.sent .bubble-body{{grid-column:1;grid-row:1;background:#2a1705;border-color:var(--gold)}} .bubble.received .bubble-body{{background:#111;border-color:var(--orange)}} .bubble.audit{{max-width:96%}} .avatar{{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:var(--orange);color:#130800;font-weight:1000;box-shadow:0 0 0 4px #000,0 0 0 6px #ff9f1a66}} .bubble-body{{border:1px solid #ff9f1a88;border-radius:20px;padding:.9rem 1rem;box-shadow:0 10px 24px #0008}} .bubble-body header{{display:flex;gap:.65rem;align-items:baseline;flex-wrap:wrap;color:var(--gold);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}} .bubble-body header time{{margin-left:auto;color:var(--muted);text-transform:none;letter-spacing:0}} .bubble-body p{{white-space:pre-wrap;margin:.55rem 0 0}} .identity{{display:inline-flex;gap:.5rem;align-items:center}} .pips{{display:inline-flex;gap:2px}} .pips i{{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}} .admiral-mark{{font-size:1rem;color:#fff;text-shadow:0 0 8px #fff}} .rank-captain .bubble-body{{background:linear-gradient(135deg,#211105,#0b0704);border-color:var(--gold)}} .rank-captain .avatar{{background:var(--gold)}} .rank-wesley .bubble-body{{background:linear-gradient(135deg,#160f08,#050505);border-color:var(--orange)}} .rank-wesley .avatar{{background:var(--orange)}} .rank-command{{max-width:98%}} .rank-command .bubble-body{{background:linear-gradient(135deg,#3a0707,#140202);border-color:#ffdf6e;box-shadow:0 0 0 1px #ffdf6e66,0 14px 35px #8b000066}} .rank-command .avatar{{background:#ffdf6e;color:#260000;box-shadow:0 0 0 4px #000,0 0 0 8px #9b111e}}
         @media (max-width:800px){{main{{padding:1rem}}.lcars-hero,.comms-grid{{grid-template-columns:1fr}}.lcars-cap{{min-height:34px;border-radius:28px;background:linear-gradient(90deg,var(--amber),var(--orange),var(--peach));box-shadow:inset 0 -10px #050505}}.bubble{{max-width:100%}}}}
         </style></head><body><main>{body}</main></body></html>"""
 
