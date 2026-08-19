@@ -122,10 +122,16 @@ class PortalHandler(BaseHTTPRequestHandler):
             if not principal:
                 return
             fields = self.read_form()
+            recipient = fields.get("recipient", "")
+            body = fields.get("body", "")
             try:
-                self.app.encrypt_and_store(principal, fields.get("recipient", ""), fields.get("body", ""), self.client_ip(), self.headers.get("User-Agent", ""))
+                self.app.encrypt_and_store(principal, recipient, body, self.client_ip(), self.headers.get("User-Agent", ""))
             except ValueError as exc:
                 return self.html_response(self.shell("Send failed", f"<p class='error'>{html.escape(str(exc))}</p><p><a href='{BASE_PATH}/comms'>Back</a></p>"), HTTPStatus.BAD_REQUEST)
+            try:
+                self.app.inject_openclaw_message(principal, recipient, body)
+            except (OSError, subprocess.SubprocessError) as exc:
+                print(f"openclaw injection failed for web message: {exc}", flush=True)
             return self.redirect(BASE_PATH + "/comms")
         if path == BASE_PATH + "/api/messages":
             principal = self.require_api()
