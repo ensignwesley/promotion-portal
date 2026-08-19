@@ -1,7 +1,9 @@
+import json
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -14,6 +16,7 @@ class AuthRouteTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.instance = Path(self.tmp.name) / "instance"
         create_instance(self.instance)
+        self.credentials = json.loads((self.instance / "credentials.generated.json").read_text())
         self.server = make_server("127.0.0.1", 0, self.instance)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -26,8 +29,8 @@ class AuthRouteTest(unittest.TestCase):
         self.thread.join(timeout=2)
         self.tmp.cleanup()
 
-    def fetch_status(self, path, headers=None):
-        req = Request(self.base_url + path, headers=headers or {})
+    def fetch_status(self, path, headers=None, data=None):
+        req = Request(self.base_url + path, headers=headers or {}, data=data)
         try:
             with urlopen(req, timeout=5) as response:
                 response.read()
@@ -42,6 +45,21 @@ class AuthRouteTest(unittest.TestCase):
         token = self.server.app.security.sign_session("captain")
         status = self.fetch_status("/evaluation", {"Cookie": f"portal_session={token}"})
         self.assertEqual(status, 200)
+
+    def test_wesley_api_message_injects_openclaw_session(self):
+        payload = json.dumps({"recipient": "wesley", "body": "Report to bridge"}).encode()
+        token = self.credentials["captain"]["api_token"]
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+        with patch("promotion_portal.server.subprocess.run") as run:
+            status = self.fetch_status("/api/messages", headers=headers, data=payload)
+
+        self.assertEqual(status, 201)
+        run.assert_called_once_with(
+            ["openclaw", "agent", "--agent", "main", "-m", "Secure Coms message from captain: Report to bridge"],
+            timeout=30,
+            check=True,
+        )
 
 
 if __name__ == "__main__":

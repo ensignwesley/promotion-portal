@@ -2,6 +2,7 @@ import argparse
 import html
 import json
 import os
+import subprocess
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -48,6 +49,16 @@ class PortalApp:
                 "user_agent": row["user_agent"] or "",
             })
         return out
+
+    def inject_openclaw_message(self, sender: str, recipient: str, body: str) -> bool:
+        if recipient != "wesley":
+            return False
+        subprocess.run(
+            ["openclaw", "agent", "--agent", "main", "-m", f"Secure Coms message from {sender}: {body}"],
+            timeout=30,
+            check=True,
+        )
+        return True
 
 
 class PortalHandler(BaseHTTPRequestHandler):
@@ -108,11 +119,18 @@ class PortalHandler(BaseHTTPRequestHandler):
             if not principal:
                 return
             data = self.read_json()
+            recipient = str(data.get("recipient", ""))
+            body = str(data.get("body", ""))
             try:
-                mid = self.app.encrypt_and_store(principal, str(data.get("recipient", "")), str(data.get("body", "")), self.client_ip(), self.headers.get("User-Agent", ""))
+                mid = self.app.encrypt_and_store(principal, recipient, body, self.client_ip(), self.headers.get("User-Agent", ""))
             except ValueError as exc:
                 return self.json_response({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return self.json_response({"id": mid, "status": "stored"}, HTTPStatus.CREATED)
+            delivered_to_openclaw = False
+            try:
+                delivered_to_openclaw = self.app.inject_openclaw_message(principal, recipient, body)
+            except (OSError, subprocess.SubprocessError) as exc:
+                return self.json_response({"id": mid, "status": "stored_delivery_failed", "error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+            return self.json_response({"id": mid, "status": "stored", "delivered_to_openclaw": delivered_to_openclaw}, HTTPStatus.CREATED)
         return self.not_found()
 
     def normalized_path(self):
