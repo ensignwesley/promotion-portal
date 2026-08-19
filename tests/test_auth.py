@@ -51,12 +51,13 @@ class AuthRouteTest(unittest.TestCase):
         token = self.credentials["captain"]["api_token"]
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-        with patch("promotion_portal.server.subprocess.run") as run:
+        with patch.dict("promotion_portal.server.os.environ", {"OPENCLAW_BIN": "/bin/openclaw-test"}), \
+             patch("promotion_portal.server.subprocess.run") as run:
             status = self.fetch_status("/api/messages", headers=headers, data=payload)
 
         self.assertEqual(status, 201)
         run.assert_called_once_with(
-            ["openclaw", "agent", "--agent", "main", "-m", "Secure Coms message from captain: Report to bridge"],
+            ["/bin/openclaw-test", "agent", "--agent", "main", "-m", "Secure Coms message from captain: Report to bridge"],
             timeout=30,
             check=True,
         )

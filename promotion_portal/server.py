@@ -2,6 +2,7 @@ import argparse
 import html
 import json
 import os
+import shutil
 import subprocess
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -53,8 +54,9 @@ class PortalApp:
     def inject_openclaw_message(self, sender: str, recipient: str, body: str) -> bool:
         if recipient != "wesley":
             return False
+        openclaw_bin = os.environ.get("OPENCLAW_BIN") or shutil.which("openclaw") or "/home/jarvis/.npm-global/bin/openclaw"
         subprocess.run(
-            ["openclaw", "agent", "--agent", "main", "-m", f"Secure Coms message from {sender}: {body}"],
+            [openclaw_bin, "agent", "--agent", "main", "-m", f"Secure Coms message from {sender}: {body}"],
             timeout=30,
             check=True,
         )
