@@ -56,12 +56,17 @@ class AuthRouteTest(unittest.TestCase):
             status = self.fetch_status("/api/messages", headers=headers, data=payload)
 
         self.assertEqual(status, 201)
-        popen.assert_called_once_with(
-            ["/bin/openclaw-test", "agent", "--agent", "main", "-m", "Secure Coms message from captain: Report to bridge"],
-            stdout=-3,
-            stderr=-3,
-            start_new_session=True,
-        )
+        popen.assert_called_once()
+        args = popen.call_args.args[0]
+        self.assertEqual(args[:4], ["/bin/openclaw-test", "agent", "--agent", "main"])
+        self.assertIn("[SECURE COMS — REAL-TIME CHANNEL]", args[-1])
+        self.assertIn("Message: Report to bridge", args[-1])
+        self.assertEqual(popen.call_args.kwargs["stdout"], -3)
+        self.assertEqual(popen.call_args.kwargs["stderr"], -3)
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+
+    def test_avatar_static_route_serves_images(self):
+        self.assertEqual(self.fetch_status("/static/avatars/wesley.jpg"), 200)
 
 
 if __name__ == "__main__":

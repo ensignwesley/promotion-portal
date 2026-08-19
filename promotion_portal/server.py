@@ -1,6 +1,7 @@
 import argparse
 import html
 import json
+import mimetypes
 import os
 import shutil
 import subprocess
@@ -56,7 +57,14 @@ class PortalApp:
             return False
         openclaw_bin = os.environ.get("OPENCLAW_BIN") or shutil.which("openclaw") or "/home/jarvis/.npm-global/bin/openclaw"
         subprocess.Popen(
-            [openclaw_bin, "agent", "--agent", "main", "-m", f"Secure Coms message from {sender}: {body}"],
+            [openclaw_bin, "agent", "--agent", "main", "-m",
+             f"""[SECURE COMS — REAL-TIME CHANNEL]
+From: {sender.upper()}
+To respond, use exec to call the Secure Coms API. Your API token is in ~/promotion-portal/instance/credentials.generated.json (field: wesley.api_token). POST to http://127.0.0.1:3010/promotion-review/api/messages with Bearer auth header and JSON body: {{"recipient": "{sender}", "body": "your reply"}}.
+
+Do NOT reply as a session message. Session replies do not reach the Secure Coms channel. Use the API.
+
+Message: {body}"""],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -101,6 +109,8 @@ class PortalHandler(BaseHTTPRequestHandler):
             return self.json_response({"messages": self.app.visible_messages(principal)})
         if path == BASE_PATH + "/api/status":
             return self.json_response({"status": "phase0", "service": "promotion-review", "deliverables": ["portal", "secure-coms"]})
+        if path.startswith(BASE_PATH + "/static/"):
+            return self.static_response(path.removeprefix(BASE_PATH + "/static/"))
         return self.not_found()
 
     def do_POST(self):
@@ -295,10 +305,10 @@ class PortalHandler(BaseHTTPRequestHandler):
         timestamp = self.formatted_timestamp(message["created_at"])
         direction = "audit" if principal == "command" else ("sent" if sender_key == principal else "received")
         rank_class = f"rank-{sender_key}"
-        icon = {"captain": "★", "wesley": "◆", "command": "⌂"}.get(sender_key, "•")
+        avatar = f"{BASE_PATH}/static/avatars/{html.escape(sender_key)}.jpg"
         return f"""
         <article class='bubble {direction} {rank_class}'>
-          <div class='avatar'>{icon}</div>
+          <div class='avatar'><img src='{avatar}' alt='{sender} avatar'></div>
           <div class='bubble-body'>
             <header><span class='identity'>{self.insignia(sender_key)}<strong>{sender}</strong></span><span>to {recipient}</span><time>{timestamp}</time></header>
             <p>{body}</p>
@@ -315,8 +325,23 @@ class PortalHandler(BaseHTTPRequestHandler):
         .communique-status{{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;margin:-.2rem 0 1rem;padding:.75rem 1rem;border-radius:999px;background:linear-gradient(90deg,#ff9f1a,#ff6b00 42%,#2a1705 42%);color:#130800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;box-shadow:0 14px 30px #0008}} .communique-status span:last-child{{color:var(--cream)}}
         .comms-grid{{display:grid;grid-template-columns:minmax(270px,340px) 1fr;gap:1.2rem;align-items:start}} .compose-panel{{border-radius:16px 42px 16px 42px;border-left:30px solid var(--orange)}} .history-panel{{padding:0;overflow:hidden;border-radius:42px 16px 42px 16px}} .history-head{{display:flex;justify-content:space-between;gap:1rem;background:linear-gradient(90deg,var(--orange),var(--amber));color:#120800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;padding:.85rem 1.25rem}} .thread{{padding:1.25rem;display:flex;flex-direction:column;gap:1rem}} .empty{{color:var(--muted);text-align:center}}
         .bubble{{display:grid;grid-template-columns:48px minmax(0,1fr);gap:.75rem;max-width:82%;align-items:start}} .bubble.sent{{align-self:end;grid-template-columns:minmax(0,1fr) 48px}} .bubble.sent .avatar{{grid-column:2;grid-row:1;background:var(--gold);color:#120800}} .bubble.sent .bubble-body{{grid-column:1;grid-row:1;background:#2a1705;border-color:var(--gold)}} .bubble.received .bubble-body{{background:#111;border-color:var(--orange)}} .bubble.audit{{max-width:96%}} .avatar{{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:var(--orange);color:#130800;font-weight:1000;box-shadow:0 0 0 4px #000,0 0 0 6px #ff9f1a66}} .bubble-body{{border:1px solid #ff9f1a88;border-radius:20px;padding:.9rem 1rem;box-shadow:0 10px 24px #0008}} .bubble-body header{{display:flex;gap:.65rem;align-items:baseline;flex-wrap:wrap;color:var(--gold);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}} .bubble-body header time{{margin-left:auto;color:var(--muted);text-transform:none;letter-spacing:0}} .bubble-body p{{white-space:pre-wrap;margin:.55rem 0 0}} .identity{{display:inline-flex;gap:.5rem;align-items:center}} .pips{{display:inline-flex;gap:2px}} .pips i{{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}} .admiral-mark{{font-size:1rem;color:#fff;text-shadow:0 0 8px #fff}} .rank-captain .bubble-body{{background:linear-gradient(135deg,#211105,#0b0704);border-color:var(--gold)}} .rank-captain .avatar{{background:var(--gold)}} .rank-wesley .bubble-body{{background:linear-gradient(135deg,#160f08,#050505);border-color:var(--orange)}} .rank-wesley .avatar{{background:var(--orange)}} .rank-command{{max-width:98%}} .rank-command .bubble-body{{background:linear-gradient(135deg,#3a0707,#140202);border-color:#ffdf6e;box-shadow:0 0 0 1px #ffdf6e66,0 14px 35px #8b000066}} .rank-command .avatar{{background:#ffdf6e;color:#260000;box-shadow:0 0 0 4px #000,0 0 0 8px #9b111e}}
+        .avatar img{{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}} .rank-command .avatar img{{filter:saturate(1.18) contrast(1.05)}}
         @media (max-width:800px){{main{{padding:1rem}}.lcars-hero,.comms-grid{{grid-template-columns:1fr}}.lcars-cap{{min-height:34px;border-radius:28px;background:linear-gradient(90deg,var(--amber),var(--orange),var(--peach));box-shadow:inset 0 -10px #050505}}.bubble{{max-width:100%}}}}
         </style></head><body><main>{body}</main></body></html>"""
+
+    def static_response(self, relative_path: str):
+        static_root = Path(__file__).with_name("static").resolve()
+        requested = (static_root / relative_path).resolve()
+        if static_root not in requested.parents or not requested.is_file():
+            return self.not_found()
+        raw = requested.read_bytes()
+        content_type = mimetypes.guess_type(requested.name)[0] or "application/octet-stream"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.end_headers()
+        self.wfile.write(raw)
 
     def html_response(self, body: str, status=HTTPStatus.OK):
         raw = body.encode()
