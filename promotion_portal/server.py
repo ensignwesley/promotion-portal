@@ -235,23 +235,58 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def comms_page(self, principal: str):
         messages = self.app.visible_messages(principal)
-        rows = "".join(f"<article class='msg'><header>#{m['id']} {html.escape(m['created_at'])} — <b>{html.escape(m['sender'])}</b> to <b>{html.escape(m['recipient'])}</b></header><p>{html.escape(m['body'])}</p></article>" for m in messages)
-        role_note = "Command audit view: all messages visible." if principal == "command" else "Principal view: sent and received messages only."
+        rows = "".join(self.render_message(principal, m) for m in messages)
+        role_note = "Command audit view: all encrypted message history visible." if principal == "command" else "Principal view: sent and received messages only."
         options = "".join(f"<option>{p}</option>" for p in sorted(RECIPIENTS))
         return self.html_response(self.shell("Secure Coms", f"""
-        <section class='card'><p class='eyebrow'>Authenticated as {html.escape(principal)}</p><h1>Secure Coms</h1><p>{role_note}</p>
-        <nav><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/logout'>Logout</a></nav>
-        <form method='post' action='{BASE_PATH}/comms/send'>
-          <label>Recipient <select name='recipient'>{options}</select></label>
-          <label>Message <textarea name='body' rows='4' required></textarea></label>
-          <button type='submit'>Send encrypted message</button>
-        </form></section>
-        <section class='card'><h2>Audit history</h2>{rows or '<p>No messages yet.</p>'}</section>
+        <section class='lcars-hero'>
+          <div class='lcars-cap'></div>
+          <div><p class='eyebrow'>Authenticated as {html.escape(principal)}</p><h1>Secure Coms</h1><p>{role_note}</p></div>
+        </section>
+        <section class='comms-grid'>
+          <div class='compose-panel'>
+            <h2>Open channel</h2>
+            <nav><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/logout'>Logout</a></nav>
+            <form method='post' action='{BASE_PATH}/comms/send'>
+              <label>Recipient <select name='recipient'>{options}</select></label>
+              <label>Message <textarea name='body' rows='5' required></textarea></label>
+              <button type='submit'>Send encrypted message</button>
+            </form>
+          </div>
+          <div class='history-panel'>
+            <div class='history-head'><span>Message history</span><span>{len(messages)} records</span></div>
+            <div class='thread'>{rows or '<p class="empty">No messages yet.</p>'}</div>
+          </div>
+        </section>
         """))
+
+    def render_message(self, principal: str, message: dict):
+        sender = html.escape(message["sender"])
+        recipient = html.escape(message["recipient"])
+        body = html.escape(message["body"])
+        timestamp = html.escape(message["created_at"])
+        direction = "audit" if principal == "command" else ("sent" if message["sender"] == principal else "received")
+        icon = {"captain": "★", "wesley": "◆", "command": "⌂"}.get(message["sender"], "•")
+        return f"""
+        <article class='bubble {direction}'>
+          <div class='avatar'>{icon}</div>
+          <div class='bubble-body'>
+            <header><strong>{sender}</strong><span>to {recipient}</span><time>{timestamp}</time></header>
+            <p>{body}</p>
+          </div>
+        </article>
+        """
 
     def shell(self, title: str, body: str):
         return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(title)}</title>
-        <style>body{{margin:0;background:#08111f;color:#e9f2ff;font:16px/1.5 system-ui,sans-serif}}main{{max-width:920px;margin:0 auto;padding:2rem}}.card{{background:#111d2d;border:1px solid #2d496b;border-radius:16px;padding:1.5rem;margin:1rem 0;box-shadow:0 12px 40px #0005}}.eyebrow{{color:#5eead4;text-transform:uppercase;letter-spacing:.14em;font-size:.8rem}}a{{color:#7dd3fc}}.button,button{{background:#5eead4;color:#04111f;border:0;border-radius:10px;padding:.7rem 1rem;font-weight:700}}label{{display:block;margin:1rem 0}}input,select,textarea{{width:100%;box-sizing:border-box;background:#07101d;color:#e9f2ff;border:1px solid #38587a;border-radius:10px;padding:.7rem}}.msg{{border-top:1px solid #2d496b;padding:.8rem 0}}.msg header{{color:#b7c8dd}}.error{{color:#fecaca}}</style></head><body><main>{body}</main></body></html>"""
+        <style>
+        :root{{--bg:#050505;--panel:#120c05;--amber:#ff9f1a;--orange:#ff6b00;--gold:#ffd166;--peach:#ffb199;--cream:#ffe8c2;--blue:#7dd3fc;--muted:#c79257}}
+        *{{box-sizing:border-box}} body{{margin:0;background:radial-gradient(circle at top right,#1b1208 0,#050505 42rem);color:var(--cream);font:16px/1.5 system-ui,sans-serif}} body:before{{content:"";position:fixed;inset:0;background:linear-gradient(90deg,#0000 0 96%,#ff9f1a22 96% 97%,#0000 97%),linear-gradient(#0000 0 96%,#ff9f1a14 96% 97%,#0000 97%);background-size:48px 48px;pointer-events:none}} main{{max-width:1180px;margin:0 auto;padding:2rem;position:relative}} h1,h2{{letter-spacing:.03em;text-transform:uppercase}} .card,.compose-panel,.history-panel,.lcars-hero{{background:linear-gradient(135deg,#160f08,#070707);border:1px solid #ff9f1a66;border-radius:26px;padding:1.5rem;margin:1rem 0;box-shadow:0 18px 45px #0009}} .eyebrow{{color:var(--gold);text-transform:uppercase;letter-spacing:.18em;font-size:.78rem;font-weight:800}} a{{color:var(--gold)}} .button,button{{background:linear-gradient(90deg,var(--amber),var(--orange));color:#120800;border:0;border-radius:999px;padding:.8rem 1.2rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em}} label{{display:block;margin:1rem 0;color:var(--gold);font-weight:700;text-transform:uppercase;font-size:.78rem;letter-spacing:.08em}} input,select,textarea{{width:100%;box-sizing:border-box;background:#080604;color:var(--cream);border:1px solid #ff9f1a88;border-radius:18px;padding:.85rem}} textarea{{resize:vertical}} .error{{color:#fecaca}}
+        .lcars-hero{{display:grid;grid-template-columns:140px 1fr;gap:1.25rem;align-items:stretch;border-radius:42px 16px 16px 42px}} .lcars-cap{{min-height:145px;border-radius:34px 0 0 34px;background:linear-gradient(180deg,var(--amber) 0 38%,var(--orange) 38% 64%,var(--peach) 64%);box-shadow:inset -18px 0 #050505}} .lcars-hero h1{{font-size:clamp(2.2rem,7vw,5.5rem);line-height:.9;margin:.2rem 0;color:var(--amber)}} .lcars-hero p{{max-width:56rem}}
+        .comms-grid{{display:grid;grid-template-columns:minmax(270px,340px) 1fr;gap:1.2rem;align-items:start}} .compose-panel{{border-radius:16px 42px 16px 42px;border-left:30px solid var(--orange)}} .history-panel{{padding:0;overflow:hidden;border-radius:42px 16px 42px 16px}} .history-head{{display:flex;justify-content:space-between;gap:1rem;background:linear-gradient(90deg,var(--orange),var(--amber));color:#120800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;padding:.85rem 1.25rem}} .thread{{padding:1.25rem;display:flex;flex-direction:column;gap:1rem}} .empty{{color:var(--muted);text-align:center}}
+        .bubble{{display:grid;grid-template-columns:48px minmax(0,1fr);gap:.75rem;max-width:82%;align-items:start}} .bubble.sent{{align-self:end;grid-template-columns:minmax(0,1fr) 48px}} .bubble.sent .avatar{{grid-column:2;grid-row:1;background:var(--gold);color:#120800}} .bubble.sent .bubble-body{{grid-column:1;grid-row:1;background:#2a1705;border-color:var(--gold)}} .bubble.received .bubble-body{{background:#111;border-color:var(--orange)}} .bubble.audit{{max-width:96%}} .avatar{{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:var(--orange);color:#130800;font-weight:1000;box-shadow:0 0 0 4px #000,0 0 0 6px #ff9f1a66}} .bubble-body{{border:1px solid #ff9f1a88;border-radius:20px;padding:.9rem 1rem;box-shadow:0 10px 24px #0008}} .bubble-body header{{display:flex;gap:.65rem;align-items:baseline;flex-wrap:wrap;color:var(--gold);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}} .bubble-body header time{{margin-left:auto;color:var(--muted);text-transform:none;letter-spacing:0}} .bubble-body p{{white-space:pre-wrap;margin:.55rem 0 0}}
+        @media (max-width:800px){{main{{padding:1rem}}.lcars-hero,.comms-grid{{grid-template-columns:1fr}}.lcars-cap{{min-height:34px;border-radius:28px;background:linear-gradient(90deg,var(--amber),var(--orange),var(--peach));box-shadow:inset 0 -10px #050505}}.bubble{{max-width:100%}}}}
+        </style></head><body><main>{body}</main></body></html>"""
 
     def html_response(self, body: str, status=HTTPStatus.OK):
         raw = body.encode()
