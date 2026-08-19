@@ -55,10 +55,11 @@ class PortalApp:
         if recipient != "wesley":
             return False
         openclaw_bin = os.environ.get("OPENCLAW_BIN") or shutil.which("openclaw") or "/home/jarvis/.npm-global/bin/openclaw"
-        subprocess.run(
+        subprocess.Popen(
             [openclaw_bin, "agent", "--agent", "main", "-m", f"Secure Coms message from {sender}: {body}"],
-            timeout=30,
-            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         return True
 
@@ -131,7 +132,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             try:
                 delivered_to_openclaw = self.app.inject_openclaw_message(principal, recipient, body)
             except (OSError, subprocess.SubprocessError) as exc:
-                return self.json_response({"id": mid, "status": "stored_delivery_failed", "error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+                print(f"openclaw injection failed for message {mid}: {exc}", flush=True)
             return self.json_response({"id": mid, "status": "stored", "delivered_to_openclaw": delivered_to_openclaw}, HTTPStatus.CREATED)
         return self.not_found()
 
