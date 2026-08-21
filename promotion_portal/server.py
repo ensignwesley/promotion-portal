@@ -108,10 +108,37 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
             return self.json_response({"messages": self.app.visible_messages(principal)})
         if path == BASE_PATH + "/api/status":
-            return self.json_response({"status": "phase0", "service": "promotion-review", "deliverables": ["portal", "secure-coms"]})
+            snapshot = self.app.store.evaluation_snapshot()
+            return self.json_response({
+                "status": "phase1",
+                "service": "promotion-review",
+                "deliverables": ["portal", "secure-coms", "evaluation-ledger"],
+                "evaluation": snapshot["aggregate"],
+            })
         if path.startswith(BASE_PATH + "/static/"):
             return self.static_response(path.removeprefix(BASE_PATH + "/static/"))
         return self.not_found()
+
+
+    def do_HEAD(self):
+        path = self.normalized_path()
+        if path in ("/", ""):
+            return self.head_redirect(BASE_PATH + "/")
+        if path in (BASE_PATH, BASE_PATH + "/", BASE_PATH + "/login"):
+            return self.head_response("text/html; charset=utf-8")
+        if path in (BASE_PATH + "/evaluation", BASE_PATH + "/comms"):
+            if not self.session_principal():
+                return self.head_response("text/html; charset=utf-8", HTTPStatus.UNAUTHORIZED)
+            return self.head_response("text/html; charset=utf-8")
+        if path in (BASE_PATH + "/api/messages",):
+            if not self.bearer_principal():
+                return self.head_response("application/json", HTTPStatus.UNAUTHORIZED)
+            return self.head_response("application/json")
+        if path == BASE_PATH + "/api/status":
+            return self.head_response("application/json")
+        if path.startswith(BASE_PATH + "/static/"):
+            return self.static_response(path.removeprefix(BASE_PATH + "/static/"), head_only=True)
+        return self.head_response("text/html; charset=utf-8", HTTPStatus.NOT_FOUND)
 
     def do_POST(self):
         path = self.normalized_path()
@@ -243,12 +270,54 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def evaluation_page(self, principal: str):
+        snapshot = self.app.store.evaluation_snapshot()
+        aggregate = snapshot["aggregate"]
+        if aggregate["max_score"]:
+            score_line = f"{aggregate['score']}/{aggregate['max_score']} across {aggregate['scored_count']} scored tasks"
+        else:
+            score_line = "No scored tasks yet"
+        task_cards = "".join(self.render_evaluation_task(task, snapshot["evidence_by_task"].get(task["id"], [])) for task in snapshot["tasks"])
+        timeline_rows = "".join(
+            f"<li><time>{html.escape(item['created_at'])}</time> <strong>{html.escape(item['event_type'])}</strong> — {html.escape(item['detail'])}</li>"
+            for item in snapshot["timeline"][:20]
+        )
         return self.html_response(self.shell("Evaluation", f"""
         <section class='card'><p class='eyebrow'>Authenticated as {html.escape(principal)}</p>
         <h1>Protected Evaluation</h1>
-        <p>Phase 0 protected content is reachable only after authentication. Detailed review material will be added during Phase 1.</p>
+        <p>Phase 1 turns the portal into an auditable review case: tasks, evidence, scores, and corrections-required trend are read from the ledger.</p>
+        <dl class='metric-grid'>
+          <div><dt>Score</dt><dd>{html.escape(score_line)}</dd></div>
+          <div><dt>Tasks</dt><dd>{aggregate['task_count']}</dd></div>
+          <div><dt>Evidence items</dt><dd>{aggregate['evidence_count']}</dd></div>
+          <div><dt>Corrections required</dt><dd>{aggregate['corrections_required']}</dd></div>
+          <div><dt>Self-caught</dt><dd>{aggregate['self_caught']}</dd></div>
+        </dl>
         <p><a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <section class='card'><h2>Evaluation tasks</h2>{task_cards or '<p class="empty">No evaluation tasks recorded yet.</p>'}</section>
+        <section class='card'><h2>Review timeline</h2><ul class='timeline'>{timeline_rows or '<li class="empty">No timeline events recorded yet.</li>'}</ul></section>
         """))
+
+    def render_evaluation_task(self, task: dict, evidence: list[dict]):
+        score = "pending" if task["score"] is None else f"{task['score']}/{task['max_score']}"
+        evidence_rows = "".join(
+            f"<li><strong>{html.escape(item['title'])}</strong>{self.optional_link(item.get('url'))}<p>{html.escape(item['body'])}</p></li>"
+            for item in evidence
+        )
+        return f"""
+        <article class='evaluation-task'>
+          <header><span>#{task['id']} · {html.escape(task['status'])}</span><strong>{html.escape(score)}</strong></header>
+          <h3>{html.escape(task['title'])}</h3>
+          <p>{html.escape(task['description'])}</p>
+          <p class='meta'>Created by {html.escape(task['created_by'])} at {html.escape(task['created_at'])}</p>
+          <ul>{evidence_rows or '<li class="empty">No evidence linked yet.</li>'}</ul>
+        </article>
+        """
+
+    def optional_link(self, url: str | None):
+        if not url:
+            return ""
+        escaped = html.escape(url)
+        return f" — <a href='{escaped}' rel='noreferrer'>source</a>"
 
     def comms_page(self, principal: str):
         messages = self.app.visible_messages(principal)
@@ -327,6 +396,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         <style>
         :root{{--bg:#050505;--panel:#120c05;--amber:#ff9f1a;--orange:#ff6b00;--gold:#ffd166;--peach:#ffb199;--cream:#ffe8c2;--blue:#7dd3fc;--muted:#c79257}}
         *{{box-sizing:border-box}} body{{margin:0;background:radial-gradient(circle at top right,#1b1208 0,#050505 42rem);color:var(--cream);font:16px/1.5 system-ui,sans-serif}} body:before{{content:"";position:fixed;inset:0;background:linear-gradient(90deg,#0000 0 96%,#ff9f1a22 96% 97%,#0000 97%),linear-gradient(#0000 0 96%,#ff9f1a14 96% 97%,#0000 97%);background-size:48px 48px;pointer-events:none}} main{{max-width:1180px;margin:0 auto;padding:2rem;position:relative}} h1,h2{{letter-spacing:.03em;text-transform:uppercase}} .card,.compose-panel,.history-panel,.lcars-hero{{background:linear-gradient(135deg,#160f08,#070707);border:1px solid #ff9f1a66;border-radius:26px;padding:1.5rem;margin:1rem 0;box-shadow:0 18px 45px #0009}} .eyebrow{{color:var(--gold);text-transform:uppercase;letter-spacing:.18em;font-size:.78rem;font-weight:800}} a{{color:var(--gold)}} .button,button{{background:linear-gradient(90deg,var(--amber),var(--orange));color:#120800;border:0;border-radius:999px;padding:.8rem 1.2rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em}} label{{display:block;margin:1rem 0;color:var(--gold);font-weight:700;text-transform:uppercase;font-size:.78rem;letter-spacing:.08em}} input,select,textarea{{width:100%;box-sizing:border-box;background:#080604;color:var(--cream);border:1px solid #ff9f1a88;border-radius:18px;padding:.85rem}} textarea{{resize:vertical}} .error{{color:#fecaca}}
+        .metric-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin:1.25rem 0}} .metric-grid div{{background:#080604;border:1px solid #ff9f1a66;border-radius:18px;padding:1rem}} .metric-grid dt{{color:var(--gold);font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;font-weight:900}} .metric-grid dd{{margin:.25rem 0 0;font-size:1.15rem;font-weight:900}} .evaluation-task{{border:1px solid #ff9f1a55;border-radius:18px;padding:1rem;margin:1rem 0;background:#080604}} .evaluation-task header{{display:flex;justify-content:space-between;gap:1rem;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;font-size:.78rem}} .evaluation-task h3{{margin:.6rem 0 .2rem;color:var(--amber)}} .evaluation-task .meta,.timeline time{{color:var(--muted);font-size:.85rem}} .timeline{{padding-left:1.2rem}} .timeline li{{margin:.5rem 0}}
         .lcars-hero{{display:grid;grid-template-columns:140px 1fr;gap:1.25rem;align-items:stretch;border-radius:42px 16px 16px 42px}} .lcars-cap{{min-height:145px;border-radius:34px 0 0 34px;background:linear-gradient(180deg,var(--amber) 0 38%,var(--orange) 38% 64%,var(--peach) 64%);box-shadow:inset -18px 0 #050505}} .lcars-hero h1{{font-size:clamp(2.2rem,7vw,5.5rem);line-height:.9;margin:.2rem 0;color:var(--amber)}} .lcars-hero p{{max-width:56rem}}
         .communique-status{{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;margin:-.2rem 0 1rem;padding:.75rem 1rem;border-radius:999px;background:linear-gradient(90deg,#ff9f1a,#ff6b00 42%,#2a1705 42%);color:#130800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;box-shadow:0 14px 30px #0008}} .communique-status span:last-child{{color:var(--cream)}}
         .comms-grid{{display:grid;grid-template-columns:minmax(270px,340px) 1fr;gap:1.2rem;align-items:start}} .compose-panel{{border-radius:16px 42px 16px 42px;border-left:30px solid var(--orange)}} .history-panel{{padding:0;overflow:hidden;border-radius:42px 16px 42px 16px}} .history-head{{display:flex;justify-content:space-between;gap:1rem;background:linear-gradient(90deg,var(--orange),var(--amber));color:#120800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;padding:.85rem 1.25rem}} .thread{{padding:1.25rem;display:flex;flex-direction:column;gap:1rem}} .empty{{color:var(--muted);text-align:center}}
@@ -335,7 +405,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         @media (max-width:800px){{main{{padding:1rem}}.lcars-hero,.comms-grid{{grid-template-columns:1fr}}.lcars-cap{{min-height:34px;border-radius:28px;background:linear-gradient(90deg,var(--amber),var(--orange),var(--peach));box-shadow:inset 0 -10px #050505}}.bubble{{max-width:100%}}}}
         </style></head><body><main>{body}</main></body></html>"""
 
-    def static_response(self, relative_path: str):
+    def static_response(self, relative_path: str, head_only: bool = False):
         static_root = Path(__file__).with_name("static").resolve()
         requested = (static_root / relative_path).resolve()
         if static_root not in requested.parents or not requested.is_file():
@@ -347,7 +417,21 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.send_header("Cache-Control", "public, max-age=3600")
         self.end_headers()
-        self.wfile.write(raw)
+        if not head_only:
+            self.wfile.write(raw)
+
+    def head_response(self, content_type: str, status=HTTPStatus.OK):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def head_redirect(self, location: str):
+        self.send_response(HTTPStatus.SEE_OTHER)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def html_response(self, body: str, status=HTTPStatus.OK):
         raw = body.encode()
