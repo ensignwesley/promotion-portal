@@ -64,6 +64,22 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertEqual(payload["evaluation"]["task_count"], 1)
         self.assertEqual(payload["evaluation"]["evidence_count"], 1)
 
+    def test_public_status_matches_phase_one_ledger_state(self):
+        store = self.server.app.store
+        task_id = store.add_task("captain", "Review portal", "Evidence ledger visible.")
+        store.add_evidence(task_id, "wesley", "Rendered page", "", "Evaluation page has metrics.")
+        store.add_timeline_event("captain", "correction_required", "Remove stale public phase copy.")
+
+        status, body, content_type = self.fetch("")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
+        self.assertIn("Phase 1 / evaluation ledger live", body)
+        self.assertIn("Phase 1 evidence collection", body)
+        self.assertIn("<dt>Tasks</dt><dd>1</dd>", body)
+        self.assertIn("<dt>Evidence items</dt><dd>1</dd>", body)
+        self.assertIn("<dt>Corrections required</dt><dd>1</dd>", body)
+
     def test_head_status_routes_do_not_return_501(self):
         status, _, content_type = self.fetch("/api/status", method="HEAD")
         self.assertEqual(status, 200)

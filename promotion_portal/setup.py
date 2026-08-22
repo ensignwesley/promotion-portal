@@ -39,7 +39,7 @@ def create_instance(instance: Path, force: bool = False) -> dict:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Create Promotion Portal Phase 0 instance credentials')
+    parser = argparse.ArgumentParser(description='Create Promotion Portal Phase 1 instance credentials')
     parser.add_argument('--instance', default='./instance')
     parser.add_argument('--force', action='store_true')
     args = parser.parse_args(argv)

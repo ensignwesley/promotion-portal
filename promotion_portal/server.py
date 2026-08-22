@@ -226,15 +226,23 @@ class PortalHandler(BaseHTTPRequestHandler):
         return principal
 
     def public_status(self):
+        aggregate = self.app.store.evaluation_snapshot()["aggregate"]
         body = f"""
         <section class='card'>
-          <p class='eyebrow'>Phase 0 / Aug 19</p>
+          <p class='eyebrow'>Phase 1 / evaluation ledger live</p>
           <h1>Promotion Review Portal</h1>
-          <p class='score'>Current score: <strong>Phase 0 build in progress</strong></p>
+          <p class='score'>Current status: <strong>Phase 1 evidence collection</strong></p>
           <p>Public status is intentionally visible. Evaluation details and Secure Coms require authenticated access.</p>
+          <dl class='metric-grid'>
+            <div><dt>Tasks</dt><dd>{aggregate['task_count']}</dd></div>
+            <div><dt>Evidence items</dt><dd>{aggregate['evidence_count']}</dd></div>
+            <div><dt>Corrections required</dt><dd>{aggregate['corrections_required']}</dd></div>
+            <div><dt>Self-caught</dt><dd>{aggregate['self_caught']}</dd></div>
+          </dl>
           <ul>
-            <li>Deliverable 1: protected promotion evaluation portal.</li>
-            <li>Deliverable 2: Secure Coms API and Command audit UI.</li>
+            <li>Deliverable 1: protected promotion evaluation portal — deployed.</li>
+            <li>Deliverable 2: Secure Coms API and Command audit UI — deployed.</li>
+            <li>Deliverable 3: auditable evaluation ledger — active.</li>
           </ul>
           <p><a class='button' href='{BASE_PATH}/login'>Authenticate</a></p>
         </section>
@@ -468,7 +476,7 @@ def make_server(host: str, port: int, instance: Path):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Promotion Review Portal Phase 0 server")
+    parser = argparse.ArgumentParser(description="Promotion Review Portal Phase 1 server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=3010)
     parser.add_argument("--instance", default=os.environ.get("PROMOTION_PORTAL_INSTANCE", "./instance"))
