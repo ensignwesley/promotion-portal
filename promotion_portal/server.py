@@ -238,6 +238,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             <div><dt>Evidence items</dt><dd>{aggregate['evidence_count']}</dd></div>
             <div><dt>Corrections required</dt><dd>{aggregate['corrections_required']}</dd></div>
             <div><dt>Self-caught</dt><dd>{aggregate['self_caught']}</dd></div>
+            <div><dt>Officer-bar categories</dt><dd>{aggregate.get('category_count', 0)}</dd></div>
           </dl>
           <ul>
             <li>Deliverable 1: protected promotion evaluation portal — deployed.</li>
@@ -285,6 +286,11 @@ class PortalHandler(BaseHTTPRequestHandler):
         else:
             score_line = "No scored tasks yet"
         task_cards = "".join(self.render_evaluation_task(task, snapshot["evidence_by_task"].get(task["id"], [])) for task in snapshot["tasks"])
+        category_cards = "".join(self.render_officer_category(category) for category in snapshot["categories"])
+        trend_rows = "".join(
+            f"<tr><td>{html.escape(item['date'])}</td><td>{item['corrections_required']}</td><td>{item['self_caught']}</td><td>{item['net_corrections']}</td></tr>"
+            for item in snapshot["correction_trend"]
+        )
         timeline_rows = "".join(
             f"<li><time>{html.escape(item['created_at'])}</time> <strong>{html.escape(item['event_type'])}</strong> — {html.escape(item['detail'])}</li>"
             for item in snapshot["timeline"][:20]
@@ -299,11 +305,25 @@ class PortalHandler(BaseHTTPRequestHandler):
           <div><dt>Evidence items</dt><dd>{aggregate['evidence_count']}</dd></div>
           <div><dt>Corrections required</dt><dd>{aggregate['corrections_required']}</dd></div>
           <div><dt>Self-caught</dt><dd>{aggregate['self_caught']}</dd></div>
+          <div><dt>Officer-bar categories</dt><dd>{aggregate.get('category_count', 0)}</dd></div>
         </dl>
         <p><a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <section class='card'><h2>Officer-bar categories</h2><p>Evidence is grouped against the review bar Command needs to audit, not just listed chronologically.</p><div class='category-grid'>{category_cards}</div></section>
+        <section class='card'><h2>Corrections trend</h2><p>Goal: corrections-required trends toward zero while self-caught events rise before Captain has to tap the glass.</p><table class='trend'><thead><tr><th>Date</th><th>Corrections required</th><th>Self-caught</th><th>Net corrections</th></tr></thead><tbody>{trend_rows or '<tr><td colspan="4" class="empty">No correction events recorded yet.</td></tr>'}</tbody></table></section>
         <section class='card'><h2>Evaluation tasks</h2>{task_cards or '<p class="empty">No evaluation tasks recorded yet.</p>'}</section>
         <section class='card'><h2>Review timeline</h2><ul class='timeline'>{timeline_rows or '<li class="empty">No timeline events recorded yet.</li>'}</ul></section>
         """))
+
+    def render_officer_category(self, category: dict):
+        task_rows = "".join(f"<li>#{task['id']} — {html.escape(task['title'])}</li>" for task in category['tasks'])
+        return f"""
+        <article class='category-card'>
+          <h3>{html.escape(category['label'])}</h3>
+          <p>{html.escape(category['bar'])}</p>
+          <p class='meta'>{category['task_count']} task(s), {category['evidence_count']} evidence item(s)</p>
+          <ul>{task_rows or '<li class="empty">No evidence mapped yet.</li>'}</ul>
+        </article>
+        """
 
     def render_evaluation_task(self, task: dict, evidence: list[dict]):
         score = "pending" if task["score"] is None else f"{task['score']}/{task['max_score']}"
@@ -404,7 +424,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         <style>
         :root{{--bg:#050505;--panel:#120c05;--amber:#ff9f1a;--orange:#ff6b00;--gold:#ffd166;--peach:#ffb199;--cream:#ffe8c2;--blue:#7dd3fc;--muted:#c79257}}
         *{{box-sizing:border-box}} body{{margin:0;background:radial-gradient(circle at top right,#1b1208 0,#050505 42rem);color:var(--cream);font:16px/1.5 system-ui,sans-serif}} body:before{{content:"";position:fixed;inset:0;background:linear-gradient(90deg,#0000 0 96%,#ff9f1a22 96% 97%,#0000 97%),linear-gradient(#0000 0 96%,#ff9f1a14 96% 97%,#0000 97%);background-size:48px 48px;pointer-events:none}} main{{max-width:1180px;margin:0 auto;padding:2rem;position:relative}} h1,h2{{letter-spacing:.03em;text-transform:uppercase}} .card,.compose-panel,.history-panel,.lcars-hero{{background:linear-gradient(135deg,#160f08,#070707);border:1px solid #ff9f1a66;border-radius:26px;padding:1.5rem;margin:1rem 0;box-shadow:0 18px 45px #0009}} .eyebrow{{color:var(--gold);text-transform:uppercase;letter-spacing:.18em;font-size:.78rem;font-weight:800}} a{{color:var(--gold)}} .button,button{{background:linear-gradient(90deg,var(--amber),var(--orange));color:#120800;border:0;border-radius:999px;padding:.8rem 1.2rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em}} label{{display:block;margin:1rem 0;color:var(--gold);font-weight:700;text-transform:uppercase;font-size:.78rem;letter-spacing:.08em}} input,select,textarea{{width:100%;box-sizing:border-box;background:#080604;color:var(--cream);border:1px solid #ff9f1a88;border-radius:18px;padding:.85rem}} textarea{{resize:vertical}} .error{{color:#fecaca}}
-        .metric-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin:1.25rem 0}} .metric-grid div{{background:#080604;border:1px solid #ff9f1a66;border-radius:18px;padding:1rem}} .metric-grid dt{{color:var(--gold);font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;font-weight:900}} .metric-grid dd{{margin:.25rem 0 0;font-size:1.15rem;font-weight:900}} .evaluation-task{{border:1px solid #ff9f1a55;border-radius:18px;padding:1rem;margin:1rem 0;background:#080604}} .evaluation-task header{{display:flex;justify-content:space-between;gap:1rem;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;font-size:.78rem}} .evaluation-task h3{{margin:.6rem 0 .2rem;color:var(--amber)}} .evaluation-task .meta,.timeline time{{color:var(--muted);font-size:.85rem}} .timeline{{padding-left:1.2rem}} .timeline li{{margin:.5rem 0}}
+        .metric-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin:1.25rem 0}} .metric-grid div{{background:#080604;border:1px solid #ff9f1a66;border-radius:18px;padding:1rem}} .metric-grid dt{{color:var(--gold);font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;font-weight:900}} .metric-grid dd{{margin:.25rem 0 0;font-size:1.15rem;font-weight:900}} .category-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}} .category-card,.evaluation-task{{border:1px solid #ff9f1a55;border-radius:18px;padding:1rem;margin:1rem 0;background:#080604}} .category-card h3,.evaluation-task h3{{margin:.6rem 0 .2rem;color:var(--amber)}} .evaluation-task header{{display:flex;justify-content:space-between;gap:1rem;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;font-size:.78rem}} .evaluation-task .meta,.category-card .meta,.timeline time{{color:var(--muted);font-size:.85rem}} .timeline{{padding-left:1.2rem}} .timeline li{{margin:.5rem 0}} .trend{{width:100%;border-collapse:collapse;margin-top:1rem}} .trend th,.trend td{{border:1px solid #ff9f1a55;padding:.65rem;text-align:left}} .trend th{{color:var(--gold);text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;background:#080604}}
         .lcars-hero{{display:grid;grid-template-columns:140px 1fr;gap:1.25rem;align-items:stretch;border-radius:42px 16px 16px 42px}} .lcars-cap{{min-height:145px;border-radius:34px 0 0 34px;background:linear-gradient(180deg,var(--amber) 0 38%,var(--orange) 38% 64%,var(--peach) 64%);box-shadow:inset -18px 0 #050505}} .lcars-hero h1{{font-size:clamp(2.2rem,7vw,5.5rem);line-height:.9;margin:.2rem 0;color:var(--amber)}} .lcars-hero p{{max-width:56rem}}
         .communique-status{{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;margin:-.2rem 0 1rem;padding:.75rem 1rem;border-radius:999px;background:linear-gradient(90deg,#ff9f1a,#ff6b00 42%,#2a1705 42%);color:#130800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;box-shadow:0 14px 30px #0008}} .communique-status span:last-child{{color:var(--cream)}}
         .comms-grid{{display:grid;grid-template-columns:minmax(270px,340px) 1fr;gap:1.2rem;align-items:start}} .compose-panel{{border-radius:16px 42px 16px 42px;border-left:30px solid var(--orange)}} .history-panel{{padding:0;overflow:hidden;border-radius:42px 16px 42px 16px}} .history-head{{display:flex;justify-content:space-between;gap:1rem;background:linear-gradient(90deg,var(--orange),var(--amber));color:#120800;font-weight:1000;text-transform:uppercase;letter-spacing:.08em;padding:.85rem 1.25rem}} .thread{{padding:1.25rem;display:flex;flex-direction:column;gap:1rem}} .empty{{color:var(--muted);text-align:center}}

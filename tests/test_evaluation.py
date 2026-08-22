@@ -48,6 +48,8 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertEqual(snapshot["aggregate"]["evidence_count"], 1)
         self.assertEqual(snapshot["aggregate"]["corrections_required"], 1)
         self.assertEqual(snapshot["aggregate"]["self_caught"], 1)
+        self.assertEqual(snapshot["aggregate"]["category_count"], 1)
+        self.assertEqual(snapshot["correction_trend"][0]["net_corrections"], 0)
         self.assertIn(task_id, snapshot["evidence_by_task"])
 
     def test_status_api_exposes_evaluation_aggregate(self):
@@ -63,6 +65,8 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertEqual(payload["status"], "phase1")
         self.assertEqual(payload["evaluation"]["task_count"], 1)
         self.assertEqual(payload["evaluation"]["evidence_count"], 1)
+        self.assertEqual(payload["evaluation"]["category_count"], 1)
+        self.assertIn("correction_trend", payload["evaluation"])
 
     def test_public_status_matches_phase_one_ledger_state(self):
         store = self.server.app.store
@@ -79,6 +83,7 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("<dt>Tasks</dt><dd>1</dd>", body)
         self.assertIn("<dt>Evidence items</dt><dd>1</dd>", body)
         self.assertIn("<dt>Corrections required</dt><dd>1</dd>", body)
+        self.assertIn("<dt>Officer-bar categories</dt><dd>1</dd>", body)
 
     def test_head_status_routes_do_not_return_501(self):
         status, _, content_type = self.fetch("/api/status", method="HEAD")
@@ -103,6 +108,9 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("Audit task", body)
         self.assertIn("Smoke result", body)
         self.assertIn("Corrections required", body)
+        self.assertIn("Officer-bar categories", body)
+        self.assertIn("Operational stewardship", body)
+        self.assertIn("Corrections trend", body)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,48 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+
+OFFICER_BAR_CATEGORIES = [
+    {
+        'key': 'operational_stewardship',
+        'label': 'Operational stewardship',
+        'bar': 'Keeps the fleet genuinely green: uptime, behavior, and representation.',
+        'keywords': ('fleet', 'preflight', 'health', 'status', 'smoke', 'uptime', 'service'),
+    },
+    {
+        'key': 'execution_delivery',
+        'label': 'Execution and delivery',
+        'bar': 'Ships scoped improvements with deployable evidence instead of intent.',
+        'keywords': ('portal', 'phase', 'ledger', 'evaluation', 'deploy', 'deliverable', 'build'),
+    },
+    {
+        'key': 'accountability_communication',
+        'label': 'Accountability and communication',
+        'bar': 'Reports early, owns corrections, and keeps Command/Captain audit trails clear.',
+        'keywords': ('communication', 'correction', 'corrected', 'secure coms', 'report', 'captain', 'command'),
+    },
+    {
+        'key': 'judgment_security',
+        'label': 'Judgment and security',
+        'bar': 'Names risk, protects private data, and avoids overclaiming beyond evidence.',
+        'keywords': ('security', 'risk', 'private', 'auth', 'token', 'threat', 'overclaim'),
+    },
+]
+
+
+def officer_category_for(task: dict, evidence: list[dict]) -> dict:
+    task_text = ' '.join([task.get('title') or '', task.get('description') or '']).lower()
+    evidence_text = ' '.join(
+        [item.get('title') or '' for item in evidence]
+        + [item.get('body') or '' for item in evidence]
+    ).lower()
+    for haystack in (task_text, evidence_text):
+        for category in OFFICER_BAR_CATEGORIES:
+            if any(keyword in haystack for keyword in category['keywords']):
+                return category
+    return OFFICER_BAR_CATEGORIES[1]
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,6 +202,36 @@ class MessageStore:
         evidence_by_task: dict[int, list[dict]] = {}
         for item in evidence:
             evidence_by_task.setdefault(int(item['task_id']), []).append(item)
+        categories = []
+        categories_by_key = {}
+        for category in OFFICER_BAR_CATEGORIES:
+            entry = {
+                'key': category['key'],
+                'label': category['label'],
+                'bar': category['bar'],
+                'task_count': 0,
+                'evidence_count': 0,
+                'tasks': [],
+            }
+            categories.append(entry)
+            categories_by_key[category['key']] = entry
+        for task in tasks:
+            task_evidence = evidence_by_task.get(int(task['id']), [])
+            category = officer_category_for(task, task_evidence)
+            entry = categories_by_key[category['key']]
+            entry['task_count'] += 1
+            entry['evidence_count'] += len(task_evidence)
+            entry['tasks'].append(task)
+        correction_trend_by_day: dict[str, dict] = {}
+        for item in reversed(timeline):
+            day = str(item['created_at'])[:10]
+            bucket = correction_trend_by_day.setdefault(day, {'date': day, 'corrections_required': 0, 'self_caught': 0, 'net_corrections': 0})
+            if item['event_type'] == 'correction_required':
+                bucket['corrections_required'] += 1
+            elif item['event_type'] == 'self_caught':
+                bucket['self_caught'] += 1
+            bucket['net_corrections'] = max(0, bucket['corrections_required'] - bucket['self_caught'])
+        correction_trend = list(correction_trend_by_day.values())[-14:]
         scored = [task for task in tasks if task['score'] is not None]
         aggregate = {
             'task_count': len(tasks),
@@ -169,5 +241,7 @@ class MessageStore:
             'evidence_count': len(evidence),
             'corrections_required': sum(1 for item in timeline if item['event_type'] == 'correction_required'),
             'self_caught': sum(1 for item in timeline if item['event_type'] == 'self_caught'),
+            'category_count': sum(1 for item in categories if item['task_count']),
+            'correction_trend': correction_trend,
         }
-        return {'tasks': tasks, 'evidence_by_task': evidence_by_task, 'timeline': timeline, 'aggregate': aggregate}
+        return {'tasks': tasks, 'evidence_by_task': evidence_by_task, 'timeline': timeline, 'aggregate': aggregate, 'categories': categories, 'correction_trend': correction_trend}
