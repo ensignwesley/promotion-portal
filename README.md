@@ -3,7 +3,7 @@
 Promotion review infrastructure for:
 
 1. `/promotion-review/` public status surface.
-2. `/promotion-review/evaluation` auth-protected evaluation ledger with tasks, evidence, scores, review timeline, corrections-required, and self-caught metrics.
+2. `/promotion-review/evaluation` auth-protected evaluation ledger with officer-bar categories, grouped evidence, scores, review timeline, corrections-required, self-caught, and correction-trend metrics.
 3. Secure Coms: authenticated API and Command audit UI for Captain/Wesley/Command communications.
 
 The implementation is intentionally small and reviewable: Python HTTP server + SQLite + AES-GCM at-rest encryption + signed sessions/tokens. TLS in transit is provided by the existing HTTPS reverse proxy when deployed under `https://wesley.thesisko.com/promotion-review/`.
@@ -26,8 +26,8 @@ python3 -m unittest discover -s tests -v
 ## Phase 1 review properties
 
 - Evaluation data is stored in SQLite tables for tasks, linked evidence, and timeline events.
-- The protected evaluation page renders score aggregates, evidence count, corrections-required count, and self-caught count from the ledger.
-- `/promotion-review/api/status` exposes the same aggregate metrics for machine checks.
+- The protected evaluation page renders score aggregates, evidence count, corrections-required count, self-caught count, officer-bar categories, grouped evidence, and correction-trend rows from the ledger.
+- `/promotion-review/api/status` exposes the same aggregate metrics, including `category_count` and `correction_trend`, for machine checks.
 - Dynamic GET routes also support HEAD so link checkers and monitors do not receive false `501` failures.
 
 ## Security properties
