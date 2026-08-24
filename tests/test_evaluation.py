@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import promotion_portal.server as server_module
 from promotion_portal.server import BASE_PATH, make_server
 from promotion_portal.setup import create_instance
 from promotion_portal.storage import MessageStore
@@ -94,6 +95,23 @@ class EvaluationLedgerTest(unittest.TestCase):
         status, _, content_type = self.fetch("/evaluation", {"Cookie": f"portal_session={token}"}, method="HEAD")
         self.assertEqual(status, 200)
         self.assertIn("text/html", content_type)
+
+    def test_officer_reports_page_renders_recent_daily_logs(self):
+        report_dir = self.instance / "reports"
+        report_dir.mkdir()
+        (report_dir / "2026-08-23.md").write_text("""# Daily log\n\n## Phase 1 work\n- Verified portal tests pass.\n- Captain correction tracked.\n\n## Fleet gate\n- Preflight PASS.\n""")
+        old_reports_dir = server_module.REPORTS_DIR
+        server_module.REPORTS_DIR = report_dir
+        self.addCleanup(setattr, server_module, "REPORTS_DIR", old_reports_dir)
+        token = self.server.app.security.sign_session("captain")
+
+        status, body, _ = self.fetch("/reports", {"Cookie": f"portal_session={token}"})
+
+        self.assertEqual(status, 200)
+        self.assertIn("Officer Reports", body)
+        self.assertIn("Phase 1 work", body)
+        self.assertIn("verification mentions", body)
+        self.assertIn("correction mentions", body)
 
     def test_evaluation_page_renders_ledger_after_login(self):
         store = self.server.app.store
