@@ -40,6 +40,7 @@ class EvaluationLedgerTest(unittest.TestCase):
         store.score_task(task_id, "captain", 4)
         store.add_timeline_event("captain", "correction_required", "Tighten representation evidence.")
         store.add_timeline_event("wesley", "self_caught", "Found stale copy before Captain review.")
+        store.add_timeline_event("wesley", "useful_shipped", "Added a daily useful shipped ledger.")
 
         snapshot = store.evaluation_snapshot()
 
@@ -50,6 +51,8 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertEqual(snapshot["aggregate"]["corrections_required"], 1)
         self.assertEqual(snapshot["aggregate"]["self_caught"], 1)
         self.assertEqual(snapshot["aggregate"]["category_count"], 1)
+        self.assertEqual(snapshot["aggregate"]["useful_shipped"], 1)
+        self.assertEqual(snapshot["aggregate"]["useful_work_days"], 1)
         self.assertEqual(snapshot["correction_trend"][0]["net_corrections"], 0)
         self.assertIn(task_id, snapshot["evidence_by_task"])
 
@@ -74,6 +77,7 @@ class EvaluationLedgerTest(unittest.TestCase):
         task_id = store.add_task("captain", "Review portal", "Evidence ledger visible.")
         store.add_evidence(task_id, "wesley", "Rendered page", "", "Evaluation page has metrics.")
         store.add_timeline_event("captain", "correction_required", "Remove stale public phase copy.")
+        store.add_timeline_event("wesley", "useful_shipped", "Published officer-material daily work tracking.")
 
         status, body, content_type = self.fetch("")
 
@@ -85,6 +89,7 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("<dt>Evidence items</dt><dd>1</dd>", body)
         self.assertIn("<dt>Corrections required</dt><dd>1</dd>", body)
         self.assertIn("<dt>Officer-bar categories</dt><dd>1</dd>", body)
+        self.assertIn("<dt>Useful shipped</dt><dd>1</dd>", body)
 
     def test_head_status_routes_do_not_return_501(self):
         status, _, content_type = self.fetch("/api/status", method="HEAD")
@@ -117,6 +122,7 @@ class EvaluationLedgerTest(unittest.TestCase):
         store = self.server.app.store
         task_id = store.add_task("captain", "Audit task", "Command-readable evidence.")
         store.add_evidence(task_id, "wesley", "Smoke result", "https://wesley.thesisko.com/status/", "Status page green.")
+        store.add_timeline_event("wesley", "useful_shipped", "Added a Command-auditable daily useful shipped ledger.")
         token = self.server.app.security.sign_session("captain")
 
         status, body, _ = self.fetch("/evaluation", {"Cookie": f"portal_session={token}"})
@@ -129,6 +135,8 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("Officer-bar categories", body)
         self.assertIn("Operational stewardship", body)
         self.assertIn("Corrections trend", body)
+        self.assertIn("Daily useful shipped", body)
+        self.assertIn("Command-auditable daily useful shipped ledger", body)
 
 
 if __name__ == "__main__":

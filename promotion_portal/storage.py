@@ -223,6 +223,7 @@ class MessageStore:
             entry['evidence_count'] += len(task_evidence)
             entry['tasks'].append(task)
         correction_trend_by_day: dict[str, dict] = {}
+        useful_work_by_day: dict[str, dict] = {}
         for item in reversed(timeline):
             day = str(item['created_at'])[:10]
             bucket = correction_trend_by_day.setdefault(day, {'date': day, 'corrections_required': 0, 'self_caught': 0, 'net_corrections': 0})
@@ -230,8 +231,13 @@ class MessageStore:
                 bucket['corrections_required'] += 1
             elif item['event_type'] == 'self_caught':
                 bucket['self_caught'] += 1
+            elif item['event_type'] == 'useful_shipped':
+                useful = useful_work_by_day.setdefault(day, {'date': day, 'count': 0, 'items': []})
+                useful['count'] += 1
+                useful['items'].append(item)
             bucket['net_corrections'] = max(0, bucket['corrections_required'] - bucket['self_caught'])
         correction_trend = list(correction_trend_by_day.values())[-14:]
+        useful_work = list(useful_work_by_day.values())[-14:]
         scored = [task for task in tasks if task['score'] is not None]
         aggregate = {
             'task_count': len(tasks),
@@ -243,5 +249,7 @@ class MessageStore:
             'self_caught': sum(1 for item in timeline if item['event_type'] == 'self_caught'),
             'category_count': sum(1 for item in categories if item['task_count']),
             'correction_trend': correction_trend,
+            'useful_shipped': sum(1 for item in timeline if item['event_type'] == 'useful_shipped'),
+            'useful_work_days': len(useful_work),
         }
-        return {'tasks': tasks, 'evidence_by_task': evidence_by_task, 'timeline': timeline, 'aggregate': aggregate, 'categories': categories, 'correction_trend': correction_trend}
+        return {'tasks': tasks, 'evidence_by_task': evidence_by_task, 'timeline': timeline, 'aggregate': aggregate, 'categories': categories, 'correction_trend': correction_trend, 'useful_work': useful_work}
