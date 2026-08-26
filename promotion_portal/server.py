@@ -294,6 +294,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             score_line = "No scored tasks yet"
         task_cards = "".join(self.render_evaluation_task(task, snapshot["evidence_by_task"].get(task["id"], [])) for task in snapshot["tasks"])
         category_cards = "".join(self.render_officer_category(category) for category in snapshot["categories"])
+        readiness = snapshot["readiness"]
+        missing_categories = ", ".join(html.escape(item) for item in readiness["missing_categories"]) or "None"
+        score_percent = "not scored" if readiness["score_percent"] is None else f"{readiness['score_percent']}%"
         trend_rows = "".join(
             f"<tr><td>{html.escape(item['date'])}</td><td>{item['corrections_required']}</td><td>{item['self_caught']}</td><td>{item['net_corrections']}</td></tr>"
             for item in snapshot["correction_trend"]
@@ -321,6 +324,14 @@ class PortalHandler(BaseHTTPRequestHandler):
           <div><dt>Useful shipped</dt><dd>{aggregate.get('useful_shipped', 0)}</dd></div>
         </dl>
         <p><a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <section class='card readiness {html.escape(readiness['status'])}'><h2>Promotion readiness</h2><p>Daily command summary: score movement, today's qualifying shipped work, open correction debt, and missing officer-bar coverage.</p><dl class='metric-grid'>
+          <div><dt>Readiness</dt><dd>{html.escape(readiness['status'].replace('_', ' '))}</dd></div>
+          <div><dt>Score percent</dt><dd>{html.escape(score_percent)}</dd></div>
+          <div><dt>Useful shipped today</dt><dd>{readiness['useful_shipped_today']}</dd></div>
+          <div><dt>Net corrections</dt><dd>{readiness['net_corrections']}</dd></div>
+          <div><dt>Unscored tasks</dt><dd>{readiness['unscored_tasks']}</dd></div>
+          <div><dt>Missing categories</dt><dd>{missing_categories}</dd></div>
+        </dl></section>
         <section class='card'><h2>Officer-bar categories</h2><p>Evidence is grouped against the review bar Command needs to audit, not just listed chronologically.</p><div class='category-grid'>{category_cards}</div></section>
         <section class='card'><h2>Corrections trend</h2><p>Goal: corrections-required trends toward zero while self-caught events rise before Captain has to tap the glass.</p><table class='trend'><thead><tr><th>Date</th><th>Corrections required</th><th>Self-caught</th><th>Net corrections</th></tr></thead><tbody>{trend_rows or '<tr><td colspan="4" class="empty">No correction events recorded yet.</td></tr>'}</tbody></table></section>
         <section class='card'><h2>Daily useful shipped</h2><p>Qualifying work Captain can audit: new, independently conceived, useful items only. Routine verification and status refreshes do not belong here.</p>{useful_rows or '<p class="empty">No qualifying daily useful work recorded yet.</p>'}</section>

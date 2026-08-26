@@ -239,17 +239,36 @@ class MessageStore:
         correction_trend = list(correction_trend_by_day.values())[-14:]
         useful_work = list(useful_work_by_day.values())[-14:]
         scored = [task for task in tasks if task['score'] is not None]
+        score = sum(int(task['score']) for task in scored)
+        max_score = sum(int(task['max_score']) for task in scored)
+        today = utc_now()[:10]
+        category_count = sum(1 for item in categories if item['task_count'])
+        missing_categories = [item['label'] for item in categories if not item['task_count']]
+        useful_today = next((item for item in useful_work if item['date'] == today), None)
+        corrections_required = sum(1 for item in timeline if item['event_type'] == 'correction_required')
+        self_caught = sum(1 for item in timeline if item['event_type'] == 'self_caught')
+        net_corrections = max(0, corrections_required - self_caught)
+        readiness = {
+            'date': today,
+            'score_percent': round((score / max_score) * 100, 1) if max_score else None,
+            'missing_categories': missing_categories,
+            'unscored_tasks': len(tasks) - len(scored),
+            'useful_shipped_today': useful_today['count'] if useful_today else 0,
+            'net_corrections': net_corrections,
+            'status': 'ready_for_review' if useful_today and category_count == len(categories) and net_corrections == 0 else 'needs_work',
+        }
         aggregate = {
             'task_count': len(tasks),
             'scored_count': len(scored),
-            'score': sum(int(task['score']) for task in scored),
-            'max_score': sum(int(task['max_score']) for task in scored),
+            'score': score,
+            'max_score': max_score,
             'evidence_count': len(evidence),
-            'corrections_required': sum(1 for item in timeline if item['event_type'] == 'correction_required'),
-            'self_caught': sum(1 for item in timeline if item['event_type'] == 'self_caught'),
-            'category_count': sum(1 for item in categories if item['task_count']),
+            'corrections_required': corrections_required,
+            'self_caught': self_caught,
+            'category_count': category_count,
             'correction_trend': correction_trend,
             'useful_shipped': sum(1 for item in timeline if item['event_type'] == 'useful_shipped'),
             'useful_work_days': len(useful_work),
+            'readiness': readiness,
         }
-        return {'tasks': tasks, 'evidence_by_task': evidence_by_task, 'timeline': timeline, 'aggregate': aggregate, 'categories': categories, 'correction_trend': correction_trend, 'useful_work': useful_work}
+        return {'tasks': tasks, 'evidence_by_task': evidence_by_task, 'timeline': timeline, 'aggregate': aggregate, 'categories': categories, 'correction_trend': correction_trend, 'useful_work': useful_work, 'readiness': readiness}

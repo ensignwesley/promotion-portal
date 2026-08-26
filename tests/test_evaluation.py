@@ -53,6 +53,9 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertEqual(snapshot["aggregate"]["category_count"], 1)
         self.assertEqual(snapshot["aggregate"]["useful_shipped"], 1)
         self.assertEqual(snapshot["aggregate"]["useful_work_days"], 1)
+        self.assertEqual(snapshot["readiness"]["useful_shipped_today"], 1)
+        self.assertEqual(snapshot["readiness"]["score_percent"], 80.0)
+        self.assertIn("readiness", snapshot["aggregate"])
         self.assertEqual(snapshot["correction_trend"][0]["net_corrections"], 0)
         self.assertIn(task_id, snapshot["evidence_by_task"])
 
@@ -71,6 +74,8 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertEqual(payload["evaluation"]["evidence_count"], 1)
         self.assertEqual(payload["evaluation"]["category_count"], 1)
         self.assertIn("correction_trend", payload["evaluation"])
+        self.assertIn("readiness", payload["evaluation"])
+        self.assertEqual(payload["evaluation"]["readiness"]["useful_shipped_today"], 0)
 
     def test_public_status_matches_phase_one_ledger_state(self):
         store = self.server.app.store
@@ -137,6 +142,9 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("Corrections trend", body)
         self.assertIn("Daily useful shipped", body)
         self.assertIn("Command-auditable daily useful shipped ledger", body)
+        self.assertIn("Promotion readiness", body)
+        self.assertIn("Useful shipped today", body)
+        self.assertIn("Score percent", body)
 
 
 if __name__ == "__main__":
