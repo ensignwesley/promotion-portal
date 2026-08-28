@@ -39,10 +39,14 @@ def officer_category_for(task: dict, evidence: list[dict]) -> dict:
         [item.get('title') or '' for item in evidence]
         + [item.get('body') or '' for item in evidence]
     ).lower()
-    for haystack in (task_text, evidence_text):
-        for category in OFFICER_BAR_CATEGORIES:
-            if any(keyword in haystack for keyword in category['keywords']):
-                return category
+    combined = f"{task_text} {evidence_text}"
+    matches = []
+    for index, category in enumerate(OFFICER_BAR_CATEGORIES):
+        score = sum(combined.count(keyword) for keyword in category['keywords'])
+        if score:
+            matches.append((score, -index, category))
+    if matches:
+        return max(matches, key=lambda item: (item[0], item[1]))[2]
     return OFFICER_BAR_CATEGORIES[1]
 
 

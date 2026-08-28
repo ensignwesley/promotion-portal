@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 import promotion_portal.server as server_module
 from promotion_portal.server import BASE_PATH, make_server
 from promotion_portal.setup import create_instance
-from promotion_portal.storage import MessageStore
+from promotion_portal.storage import MessageStore, officer_category_for
 
 
 class EvaluationLedgerTest(unittest.TestCase):
@@ -58,6 +58,17 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("readiness", snapshot["aggregate"])
         self.assertEqual(snapshot["correction_trend"][0]["net_corrections"], 0)
         self.assertIn(task_id, snapshot["evidence_by_task"])
+
+    def test_security_category_wins_over_generic_portal_keyword(self):
+        task = {
+            "title": "Promotion Portal security review",
+            "description": "Name trust boundaries, auth controls, token risk, private data protection, and threat paths.",
+        }
+        evidence = [{"title": "Security judgment page", "body": "Documents risk, auth, token, private data, and overclaim controls."}]
+
+        category = officer_category_for(task, evidence)
+
+        self.assertEqual(category["key"], "judgment_security")
 
     def test_status_api_exposes_evaluation_aggregate(self):
         store = self.server.app.store
