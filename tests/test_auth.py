@@ -46,6 +46,16 @@ class AuthRouteTest(unittest.TestCase):
         status = self.fetch_status("/evaluation", {"Cookie": f"portal_session={token}"})
         self.assertEqual(status, 200)
 
+    def test_security_judgment_requires_valid_session(self):
+        self.assertEqual(self.fetch_status("/security"), 401)
+
+        token = self.server.app.security.sign_session("captain")
+        status = self.fetch_status("/security", {"Cookie": f"portal_session={token}"})
+        self.assertEqual(status, 200)
+
+    def test_static_route_rejects_path_traversal(self):
+        self.assertEqual(self.fetch_status("/static/../security.py"), 404)
+
     def test_wesley_api_message_injects_openclaw_session(self):
         payload = json.dumps({"recipient": "wesley", "body": "Report to bridge"}).encode()
         token = self.credentials["captain"]["api_token"]

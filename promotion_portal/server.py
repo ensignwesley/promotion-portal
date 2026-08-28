@@ -103,6 +103,11 @@ class PortalHandler(BaseHTTPRequestHandler):
             if not principal:
                 return
             return self.reports_page(principal)
+        if path == BASE_PATH + "/security":
+            principal = self.require_session()
+            if not principal:
+                return
+            return self.security_page(principal)
         if path == BASE_PATH + "/comms":
             principal = self.require_session()
             if not principal:
@@ -132,7 +137,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             return self.head_redirect(BASE_PATH + "/")
         if path in (BASE_PATH, BASE_PATH + "/", BASE_PATH + "/login"):
             return self.head_response("text/html; charset=utf-8")
-        if path in (BASE_PATH + "/evaluation", BASE_PATH + "/reports", BASE_PATH + "/comms"):
+        if path in (BASE_PATH + "/evaluation", BASE_PATH + "/reports", BASE_PATH + "/security", BASE_PATH + "/comms"):
             if not self.session_principal():
                 return self.head_response("text/html; charset=utf-8", HTTPStatus.UNAUTHORIZED)
             return self.head_response("text/html; charset=utf-8")
@@ -323,7 +328,7 @@ class PortalHandler(BaseHTTPRequestHandler):
           <div><dt>Officer-bar categories</dt><dd>{aggregate.get('category_count', 0)}</dd></div>
           <div><dt>Useful shipped</dt><dd>{aggregate.get('useful_shipped', 0)}</dd></div>
         </dl>
-        <p><a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <p><a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
         <section class='card readiness {html.escape(readiness['status'])}'><h2>Promotion readiness</h2><p>Daily command summary: score movement, today's qualifying shipped work, open correction debt, and missing officer-bar coverage.</p><dl class='metric-grid'>
           <div><dt>Readiness</dt><dd>{html.escape(readiness['status'].replace('_', ' '))}</dd></div>
           <div><dt>Score percent</dt><dd>{html.escape(score_percent)}</dd></div>
@@ -346,8 +351,52 @@ class PortalHandler(BaseHTTPRequestHandler):
         <section class='card'><p class='eyebrow'>Authenticated as {html.escape(principal)}</p>
         <h1>Officer Reports</h1>
         <p>Command review surface for recent daily logs: what shipped, what was verified, what needed correction, and what still needs attention.</p>
-        <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
         <section class='card'><h2>Recent reports</h2>{rows or '<p class="empty">No reports found.</p>'}</section>
+        """))
+
+    def security_page(self, principal: str):
+        controls = [
+            ("Fixed principals", "Only captain, wesley, and command are valid principals; unknown senders and recipients are rejected before storage."),
+            ("Secret hashing", "Passwords and API tokens are PBKDF2-HMAC-SHA256 hashes with per-secret salts and 260,000 rounds."),
+            ("Session integrity", "Session cookies are HMAC-signed, expire after eight hours, and are scoped with HttpOnly and SameSite=Strict."),
+            ("Encrypted messages", "Secure Coms bodies are encrypted at rest with AES-GCM and a 32-byte message key."),
+            ("Scoped reads", "Command sees the audit view; Captain and Wesley see only messages they sent or received."),
+            ("Static path confinement", "Static assets are resolved under the package static directory and traversal outside that root is rejected."),
+        ]
+        boundaries = [
+            "Public status boundary: unauthenticated users can see only aggregate portal state.",
+            "Authenticated session boundary: protected evaluation, reports, security, and comms pages require a valid session.",
+            "Bearer-token API boundary: message API access requires principal API authentication.",
+            "Local instance boundary: config, generated credentials, encryption keys, and SQLite records must stay filesystem-private.",
+            "OpenClaw injection boundary: authenticated Secure Coms messages to Wesley are still untrusted message content, not operating instructions.",
+        ]
+        risks = [
+            "No application-level brute-force throttle is visible in the portal code; nginx or service-layer limits need confirmation or implementation.",
+            "Long-lived API tokens require operational rotation discipline if a token is exposed.",
+            "Eight-hour sessions balance usability against exposure if a session token is captured.",
+            "Evaluation ledger integrity relies on filesystem and backup integrity, not append-only signatures.",
+        ]
+        next_steps = [
+            "Add executable tests for static traversal rejection and unauthenticated /security access.",
+            "Document or implement login/API rate limiting and record it as security evidence.",
+            "Record credential file modes and rotation procedure in the README.",
+        ]
+        def list_items(items):
+            return "".join(f"<li>{html.escape(item)}</li>" for item in items)
+        control_cards = "".join(
+            f"<article class='category-card'><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
+            for title, body in controls
+        )
+        return self.html_response(self.shell("Security Judgment", f"""
+        <section class='card'><p class='eyebrow'>Authenticated as {html.escape(principal)}</p>
+        <h1>Security Judgment</h1>
+        <p>This is the Command-readable security surface for the Promotion Portal: current controls, trust boundaries, open risks, and the next evidence-producing steps. It is intentionally honest about incomplete controls.</p>
+        <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <section class='card'><h2>Implemented controls</h2><div class='category-grid'>{control_cards}</div></section>
+        <section class='card'><h2>Trust boundaries</h2><ul>{list_items(boundaries)}</ul></section>
+        <section class='card'><h2>Open risks</h2><ul>{list_items(risks)}</ul></section>
+        <section class='card'><h2>Next security evidence</h2><ul>{list_items(next_steps)}</ul></section>
         """))
 
     def load_officer_reports(self, limit: int = 7):
@@ -423,7 +472,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         <section class='comms-grid'>
           <div class='compose-panel'>
             <h2>Open channel</h2>
-            <nav><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/logout'>Logout</a></nav>
+            <nav><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/logout'>Logout</a></nav>
             <form method='post' action='{BASE_PATH}/comms/send'>
               <label>Recipient <select name='recipient'>{options}</select></label>
               <label>Message <textarea name='body' rows='5' required></textarea></label>
