@@ -131,8 +131,12 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("Officer Reports", body)
         self.assertIn("Phase 1 work", body)
-        self.assertIn("verification mentions", body)
-        self.assertIn("correction mentions", body)
+        self.assertIn("Shipped / useful", body)
+        self.assertIn("Verification", body)
+        self.assertIn("Corrections", body)
+        self.assertIn("Attention / risk", body)
+        self.assertIn("Verified portal tests pass.", body)
+        self.assertIn("Captain correction tracked.", body)
 
     def test_evaluation_page_renders_ledger_after_login(self):
         store = self.server.app.store
