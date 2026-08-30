@@ -411,6 +411,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             verification = self.report_evidence_lines(lines, ("verified", "test", "pass", "smoke", "preflight"))
             corrections = self.report_evidence_lines(lines, ("correction", "captain corrected", "net_corrections"))
             attention = self.report_evidence_lines(lines, ("attention", "blocker", "risk", "needs_work", "enomem", "missing"))
+            score_movement = self.report_evidence_lines(lines, ("score", "scored", "26/40", "above 30", "5→7", "5->7"), limit=2)
             reports.append({
                 "date": path.stem,
                 "path": str(path),
@@ -419,8 +420,19 @@ class PortalHandler(BaseHTTPRequestHandler):
                 "corrections": corrections,
                 "verification": verification,
                 "attention": attention,
+                "score_movement": score_movement,
+                "command_brief": self.command_brief_for_report(shipped, verification, corrections, attention, score_movement),
             })
         return reports
+
+
+    def command_brief_for_report(self, shipped: list[str], verification: list[str], corrections: list[str], attention: list[str], score_movement: list[str]):
+        useful = "Useful work shipped" if shipped else "No qualifying useful-work line found"
+        verified = "verification present" if verification else "verification missing"
+        correction = "Captain correction/debt present" if corrections else "no correction line found"
+        risk = "attention needed" if attention else "no attention line found"
+        score = "score movement referenced" if score_movement else "no score movement referenced"
+        return f"{useful}; {verified}; {correction}; {risk}; {score}."
 
     def report_evidence_lines(self, lines: list[str], keywords: tuple[str, ...], limit: int = 3):
         matches = []
@@ -442,12 +454,14 @@ class PortalHandler(BaseHTTPRequestHandler):
         return f"""
         <article class='report-card'>
           <header><strong>{html.escape(report['date'])}</strong><span>{len(report['shipped'])} shipped · {len(report['verification'])} verification · {len(report['corrections'])} corrections · {len(report['attention'])} attention</span></header>
+          <p class='command-brief'><strong>Command brief:</strong> {html.escape(report['command_brief'])}</p>
           <ul>{headings or '<li class="empty">No report sections found.</li>'}</ul>
           <div class='report-evidence-grid'>
             <section><h4>Shipped / useful</h4><ul>{evidence_list(report['shipped'])}</ul></section>
             <section><h4>Verification</h4><ul>{evidence_list(report['verification'])}</ul></section>
             <section><h4>Corrections</h4><ul>{evidence_list(report['corrections'])}</ul></section>
             <section><h4>Attention / risk</h4><ul>{evidence_list(report['attention'])}</ul></section>
+            <section><h4>Score movement</h4><ul>{evidence_list(report['score_movement'])}</ul></section>
           </div>
         </article>
         """

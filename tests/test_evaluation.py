@@ -135,6 +135,8 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("Verification", body)
         self.assertIn("Corrections", body)
         self.assertIn("Attention / risk", body)
+        self.assertIn("Score movement", body)
+        self.assertIn("Command brief:", body)
         self.assertIn("Verified portal tests pass.", body)
         self.assertIn("Captain correction tracked.", body)
 
