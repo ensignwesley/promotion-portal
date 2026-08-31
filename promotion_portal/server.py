@@ -356,6 +356,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         """))
 
     def security_page(self, principal: str):
+        evidence = self.load_security_evidence()
         controls = [
             ("Fixed principals", "Only captain, wesley, and command are valid principals; unknown senders and recipients are rejected before storage."),
             ("Secret hashing", "Passwords and API tokens are PBKDF2-HMAC-SHA256 hashes with per-secret salts and 260,000 rounds."),
@@ -378,9 +379,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             "Evaluation ledger integrity relies on filesystem and backup integrity, not append-only signatures.",
         ]
         next_steps = [
-            "Add executable tests for static traversal rejection and unauthenticated /security access.",
             "Document or implement login/API rate limiting and record it as security evidence.",
             "Record credential file modes and rotation procedure in the README.",
+            "Decide whether the evaluation ledger needs append-only signatures before Phase 2.",
         ]
         def list_items(items):
             return "".join(f"<li>{html.escape(item)}</li>" for item in items)
@@ -394,10 +395,36 @@ class PortalHandler(BaseHTTPRequestHandler):
         <p>This is the Command-readable security surface for the Promotion Portal: current controls, trust boundaries, open risks, and the next evidence-producing steps. It is intentionally honest about incomplete controls.</p>
         <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
         <section class='card'><h2>Implemented controls</h2><div class='category-grid'>{control_cards}</div></section>
+        <section class='card'><h2>Runtime evidence checked</h2><p>These are live deployment facts gathered from the instance/config files at render time, without exposing secret values.</p><ul>{list_items(evidence)}</ul></section>
         <section class='card'><h2>Trust boundaries</h2><ul>{list_items(boundaries)}</ul></section>
         <section class='card'><h2>Open risks</h2><ul>{list_items(risks)}</ul></section>
         <section class='card'><h2>Next security evidence</h2><ul>{list_items(next_steps)}</ul></section>
         """))
+
+    def load_security_evidence(self):
+        instance = Path(self.app.instance)
+        checks = []
+        expected_private = [
+            instance / "config.json",
+            instance / "credentials.generated.json",
+            instance / "messages.sqlite3",
+        ]
+        for path in expected_private:
+            if not path.exists():
+                checks.append(f"{path.name}: missing — security review attention required.")
+                continue
+            mode = path.stat().st_mode & 0o777
+            verdict = "owner-only" if mode == 0o600 else "review required"
+            checks.append(f"{path.name}: mode {mode:o} ({verdict}).")
+        nginx_conf = Path(__file__).resolve().parents[1] / "nginx-promotion-review.conf"
+        if nginx_conf.exists():
+            text = nginx_conf.read_text(errors="replace")
+            for marker in ("proxy_pass http://127.0.0.1:3010", "client_max_body_size 64k", "proxy_set_header X-Real-IP"):
+                verdict = "present" if marker in text else "missing"
+                checks.append(f"nginx deployment marker `{marker}`: {verdict}.")
+        else:
+            checks.append("nginx deployment snippet missing from repository checkout.")
+        return checks
 
     def load_officer_reports(self, limit: int = 7):
         reports = []

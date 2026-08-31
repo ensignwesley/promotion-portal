@@ -140,6 +140,20 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("Verified portal tests pass.", body)
         self.assertIn("Captain correction tracked.", body)
 
+    def test_security_page_renders_runtime_evidence_without_secret_values(self):
+        token = self.server.app.security.sign_session("captain")
+
+        status, body, _ = self.fetch("/security", {"Cookie": f"portal_session={token}"})
+
+        self.assertEqual(status, 200)
+        self.assertIn("Runtime evidence checked", body)
+        self.assertIn("config.json: mode 600", body)
+        self.assertIn("credentials.generated.json: mode 600", body)
+        self.assertIn("messages.sqlite3: mode 600", body)
+        self.assertIn("nginx deployment marker", body)
+        self.assertNotIn("captain_password", body)
+        self.assertNotIn("api_token", body)
+
     def test_evaluation_page_renders_ledger_after_login(self):
         store = self.server.app.store
         task_id = store.add_task("captain", "Audit task", "Command-readable evidence.")

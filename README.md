@@ -31,7 +31,7 @@ python3 -m unittest discover -s tests -v
 - The protected evaluation page renders score aggregates, evidence count, corrections-required count, self-caught count, officer-bar categories, grouped evidence, and correction-trend rows from the ledger.
 - `/promotion-review/api/status` exposes the same aggregate metrics, including `category_count` and `correction_trend`, for machine checks.
 - `/promotion-review/reports` renders recent daily logs as Officer Reports for Command review.
-- `/promotion-review/security` renders implemented controls, trust boundaries, open risks, and next security-evidence steps for Command review.
+- `/promotion-review/security` renders implemented controls, runtime deployment evidence, trust boundaries, open risks, and next security-evidence steps for Command review.
 - Dynamic GET routes also support HEAD so link checkers and monitors do not receive false `501` failures.
 
 ## Security properties
@@ -39,6 +39,7 @@ python3 -m unittest discover -s tests -v
 - Separate credentials per principal; no shared password.
 - Browser login session cookies and Bearer API tokens are signed and expire.
 - Protected pages/API return `401` without auth, including the Security Judgment page.
+- The Security Judgment page reports owner-only modes for instance secrets/database and nginx deployment markers without exposing secret values.
 - Static asset routing resolves paths under the package `static/` directory and rejects traversal outside that root.
 - Command role can audit all messages; Captain/Wesley API reads are limited to messages they sent/received.
 - Message bodies are encrypted before SQLite storage using AES-256-GCM.
