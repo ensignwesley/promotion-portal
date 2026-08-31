@@ -75,6 +75,24 @@ class AuthRouteTest(unittest.TestCase):
         self.assertEqual(popen.call_args.kwargs["stderr"], -3)
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
 
+
+    def test_login_failures_are_rate_limited(self):
+        data = b"principal=captain&password=wrong"
+
+        statuses = [self.fetch_status("/login", data=data) for _ in range(6)]
+
+        self.assertEqual(statuses[:5], [401, 401, 401, 401, 401])
+        self.assertEqual(statuses[5], 429)
+
+    def test_api_auth_failures_are_rate_limited(self):
+        headers = {"Authorization": "Bearer wrong-token", "Content-Type": "application/json"}
+        data = b"{}"
+
+        statuses = [self.fetch_status("/api/messages", headers=headers, data=data) for _ in range(6)]
+
+        self.assertEqual(statuses[:5], [401, 401, 401, 401, 401])
+        self.assertEqual(statuses[5], 429)
+
     def test_avatar_static_route_serves_images(self):
         self.assertEqual(self.fetch_status("/static/avatars/wesley.jpg"), 200)
 

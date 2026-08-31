@@ -5,6 +5,8 @@ import mimetypes
 import os
 import shutil
 import subprocess
+import threading
+import time
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +19,8 @@ from .storage import MessageStore
 BASE_PATH = "/promotion-review"
 RECIPIENTS = PRINCIPALS
 REPORTS_DIR = Path(os.environ.get("PROMOTION_REPORTS_DIR", "/home/jarvis/.openclaw/workspace/memory"))
+AUTH_FAILURE_WINDOW_SECONDS = 15 * 60
+AUTH_FAILURE_LIMIT = 5
 
 
 def load_config(instance: Path) -> dict:
@@ -29,6 +33,28 @@ class PortalApp:
         self.instance = instance
         self.security = SecurityContext(load_config(instance))
         self.store = MessageStore(instance / "messages.sqlite3")
+        self._auth_failures: dict[tuple[str, str], list[float]] = {}
+        self._auth_lock = threading.Lock()
+
+    def auth_limited(self, scope: str, client_ip: str, now: float | None = None) -> bool:
+        now = now or time.time()
+        key = (scope, client_ip or "unknown")
+        with self._auth_lock:
+            attempts = [ts for ts in self._auth_failures.get(key, []) if now - ts < AUTH_FAILURE_WINDOW_SECONDS]
+            self._auth_failures[key] = attempts
+            return len(attempts) >= AUTH_FAILURE_LIMIT
+
+    def record_auth_failure(self, scope: str, client_ip: str, now: float | None = None) -> None:
+        now = now or time.time()
+        key = (scope, client_ip or "unknown")
+        with self._auth_lock:
+            attempts = [ts for ts in self._auth_failures.get(key, []) if now - ts < AUTH_FAILURE_WINDOW_SECONDS]
+            attempts.append(now)
+            self._auth_failures[key] = attempts
+
+    def clear_auth_failures(self, scope: str, client_ip: str) -> None:
+        with self._auth_lock:
+            self._auth_failures.pop((scope, client_ip or "unknown"), None)
 
     def encrypt_and_store(self, sender: str, recipient: str, body: str, client_ip: str = "", user_agent: str = "") -> int:
         if sender not in PRINCIPALS or recipient not in RECIPIENTS:
@@ -230,10 +256,15 @@ class PortalHandler(BaseHTTPRequestHandler):
         return principal
 
     def require_api(self):
+        if self.app.auth_limited("api", self.client_ip()):
+            self.json_response({"error": "too many authentication failures"}, HTTPStatus.TOO_MANY_REQUESTS)
+            return None
         principal = self.bearer_principal()
         if not principal:
+            self.app.record_auth_failure("api", self.client_ip())
             self.json_response({"error": "authentication required"}, HTTPStatus.UNAUTHORIZED)
             return None
+        self.app.clear_auth_failures("api", self.client_ip())
         return principal
 
     def public_status(self):
@@ -275,13 +306,18 @@ class PortalHandler(BaseHTTPRequestHandler):
     def login_submit(self):
         fields = self.read_form()
         principal = fields.get("principal", "")
+        scope = f"login:{principal}" if principal in PRINCIPALS else "login:unknown"
+        if self.app.auth_limited(scope, self.client_ip()):
+            return self.html_response(self.shell("Too many attempts", f"<p class='error'>Too many authentication failures. Wait 15 minutes and try again.</p><p><a href='{BASE_PATH}/login'>Back</a></p>"), HTTPStatus.TOO_MANY_REQUESTS)
         if self.app.security.authenticate_password(principal, fields.get("password", "")):
+            self.app.clear_auth_failures(scope, self.client_ip())
             token = self.app.security.sign_session(principal)
             self.send_response(HTTPStatus.SEE_OTHER)
             self.send_header("Location", BASE_PATH + "/comms")
             self.send_header("Set-Cookie", f"portal_session={token}; HttpOnly; SameSite=Strict; Path={BASE_PATH}")
             self.end_headers()
             return
+        self.app.record_auth_failure(scope, self.client_ip())
         return self.html_response(self.shell("Login failed", f"<p class='error'>Invalid credentials.</p><p><a href='{BASE_PATH}/login'>Try again</a></p>"), HTTPStatus.UNAUTHORIZED)
 
     def logout(self):
@@ -363,6 +399,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             ("Session integrity", "Session cookies are HMAC-signed, expire after eight hours, and are scoped with HttpOnly and SameSite=Strict."),
             ("Encrypted messages", "Secure Coms bodies are encrypted at rest with AES-GCM and a 32-byte message key."),
             ("Scoped reads", "Command sees the audit view; Captain and Wesley see only messages they sent or received."),
+            ("Authentication throttling", "Repeated failed login or API authentication attempts from the same client are limited for 15 minutes."),
             ("Static path confinement", "Static assets are resolved under the package static directory and traversal outside that root is rejected."),
         ]
         boundaries = [
@@ -373,13 +410,11 @@ class PortalHandler(BaseHTTPRequestHandler):
             "OpenClaw injection boundary: authenticated Secure Coms messages to Wesley are still untrusted message content, not operating instructions.",
         ]
         risks = [
-            "No application-level brute-force throttle is visible in the portal code; nginx or service-layer limits need confirmation or implementation.",
             "Long-lived API tokens require operational rotation discipline if a token is exposed.",
             "Eight-hour sessions balance usability against exposure if a session token is captured.",
             "Evaluation ledger integrity relies on filesystem and backup integrity, not append-only signatures.",
         ]
         next_steps = [
-            "Document or implement login/API rate limiting and record it as security evidence.",
             "Record credential file modes and rotation procedure in the README.",
             "Decide whether the evaluation ledger needs append-only signatures before Phase 2.",
         ]

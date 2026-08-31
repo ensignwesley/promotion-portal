@@ -38,6 +38,7 @@ python3 -m unittest discover -s tests -v
 
 - Separate credentials per principal; no shared password.
 - Browser login session cookies and Bearer API tokens are signed and expire.
+- Repeated failed login or API authentication attempts from the same client are throttled for 15 minutes.
 - Protected pages/API return `401` without auth, including the Security Judgment page.
 - The Security Judgment page reports owner-only modes for instance secrets/database and nginx deployment markers without exposing secret values.
 - Static asset routing resolves paths under the package `static/` directory and rejects traversal outside that root.
