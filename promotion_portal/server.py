@@ -382,12 +382,14 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def reports_page(self, principal: str):
         reports = self.load_officer_reports()
+        synthesis = self.officer_reports_synthesis(reports)
         rows = "".join(self.render_officer_report(report) for report in reports)
         return self.html_response(self.shell("Officer Reports", f"""
         <section class='card'><p class='eyebrow'>Authenticated as {html.escape(principal)}</p>
         <h1>Officer Reports</h1>
         <p>Command review surface for recent daily logs: what shipped, what was verified, what needed correction, and what still needs attention.</p>
         <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        {self.render_officer_reports_synthesis(synthesis)}
         <section class='card'><h2>Recent reports</h2>{rows or '<p class="empty">No reports found.</p>'}</section>
         """))
 
@@ -487,6 +489,87 @@ class PortalHandler(BaseHTTPRequestHandler):
             })
         return reports
 
+
+    def officer_reports_synthesis(self, reports: list[dict]):
+        snapshot = self.app.store.evaluation_snapshot()
+        aggregate = snapshot["aggregate"]
+        readiness = aggregate["readiness"]
+        recent = list(reports[:7])
+        previous = list(reports[7:14])
+        counts = {
+            "days": len(recent),
+            "shipped": sum(len(report["shipped"]) for report in recent),
+            "verification": sum(len(report["verification"]) for report in recent),
+            "corrections": sum(len(report["corrections"]) for report in recent),
+            "attention": sum(len(report["attention"]) for report in recent),
+            "score_movement": sum(len(report["score_movement"]) for report in recent),
+        }
+        previous_counts = {
+            "days": len(previous),
+            "shipped": sum(len(report["shipped"]) for report in previous),
+            "verification": sum(len(report["verification"]) for report in previous),
+            "corrections": sum(len(report["corrections"]) for report in previous),
+            "attention": sum(len(report["attention"]) for report in previous),
+            "score_movement": sum(len(report["score_movement"]) for report in previous),
+        }
+        def delta(name: str) -> int:
+            return counts[name] - previous_counts[name]
+        correction_trend = aggregate.get("correction_trend", [])[-7:]
+        correction_debt = sum(item.get("net_corrections", 0) for item in correction_trend)
+        if readiness["score_percent"] is None:
+            signal = "Promotion signal: insufficient scored evidence for a decision."
+        elif readiness["score_percent"] >= 75 and correction_debt == 0 and counts["shipped"] and counts["verification"]:
+            signal = "Promotion signal: positive — score, delivery, verification, and correction trend support review."
+        elif counts["shipped"] and counts["verification"]:
+            signal = "Promotion signal: developing — useful delivery and verification are present, but remaining score/correction concerns still matter."
+        else:
+            signal = "Promotion signal: weak — recent reports do not yet show enough useful delivery with verification."
+        concerns = []
+        if correction_debt:
+            concerns.append(f"recent correction debt {correction_debt}")
+        if counts["attention"]:
+            concerns.append(f"{counts['attention']} attention/risk lines")
+        if not counts["score_movement"]:
+            concerns.append("no score movement evidence")
+        concern = "Concern: " + (", ".join(concerns) if concerns else "none prominent in the recent report window") + "."
+        next_evidence = "Next evidence needed: "
+        if readiness["status"] != "ready_for_review":
+            next_evidence += "raise weak categories with deployed proof and reduce net corrections toward zero."
+        else:
+            next_evidence += "sustain the pattern and add Command/Captain scoring confirmation."
+        return {
+            "counts": counts,
+            "previous_counts": previous_counts,
+            "deltas": {name: delta(name) for name in ("shipped", "verification", "corrections", "attention", "score_movement")},
+            "score_line": f"{aggregate['score']}/{aggregate['max_score']}" if aggregate["max_score"] else "unscored",
+            "score_percent": readiness["score_percent"],
+            "correction_debt": correction_debt,
+            "signal": signal,
+            "concern": concern,
+            "next_evidence": next_evidence,
+        }
+
+    def render_officer_reports_synthesis(self, synthesis: dict):
+        counts = synthesis["counts"]
+        deltas = synthesis["deltas"]
+        def signed(value: int) -> str:
+            return f"+{value}" if value > 0 else str(value)
+        score_percent = "n/a" if synthesis["score_percent"] is None else f"{synthesis['score_percent']}%"
+        return f"""
+        <section class='card synthesis'><h2>Decision synthesis</h2>
+        <p>This block answers whether Command can use recent Officer Reports directly for promotion review instead of digging through raw logs.</p>
+        <dl class='metric-grid'>
+          <div><dt>Current score</dt><dd>{html.escape(synthesis['score_line'])} ({html.escape(score_percent)})</dd></div>
+          <div><dt>Recent window</dt><dd>{counts['days']} days</dd></div>
+          <div><dt>Useful / shipped lines</dt><dd>{counts['shipped']} ({signed(deltas['shipped'])} vs prior window)</dd></div>
+          <div><dt>Verification lines</dt><dd>{counts['verification']} ({signed(deltas['verification'])})</dd></div>
+          <div><dt>Correction lines</dt><dd>{counts['corrections']} ({signed(deltas['corrections'])})</dd></div>
+          <div><dt>Attention / risk lines</dt><dd>{counts['attention']} ({signed(deltas['attention'])})</dd></div>
+          <div><dt>Score movement lines</dt><dd>{counts['score_movement']} ({signed(deltas['score_movement'])})</dd></div>
+          <div><dt>Recent correction debt</dt><dd>{synthesis['correction_debt']}</dd></div>
+        </dl>
+        <div class='callout'><p>{html.escape(synthesis['signal'])}</p><p>{html.escape(synthesis['concern'])}</p><p>{html.escape(synthesis['next_evidence'])}</p></div></section>
+        """
 
     def command_brief_for_report(self, shipped: list[str], verification: list[str], corrections: list[str], attention: list[str], score_movement: list[str]):
         useful = "Useful work shipped" if shipped else "No qualifying useful-work line found"

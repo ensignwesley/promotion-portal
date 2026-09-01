@@ -130,6 +130,11 @@ class EvaluationLedgerTest(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertIn("Officer Reports", body)
+        self.assertIn("Decision synthesis", body)
+        self.assertIn("Promotion signal:", body)
+        self.assertIn("Concern:", body)
+        self.assertIn("Next evidence needed:", body)
+        self.assertIn("Recent correction debt", body)
         self.assertIn("Phase 1 work", body)
         self.assertIn("Shipped / useful", body)
         self.assertIn("Verification", body)
