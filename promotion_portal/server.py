@@ -403,10 +403,20 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def communication_doctrine_summary(self, snapshot: dict) -> dict:
         timeline = snapshot["timeline"]
-        recent_days = sorted({str(item["created_at"])[:10] for item in timeline})[-7:]
+        doctrine_start = "2026-09-03T09:09:30Z"  # 6104dcb shipped the doctrine surface.
+        doctrine_event_types = {"secure_coms", "self_caught", "correction_required"}
+        doctrine_events = [
+            item for item in timeline
+            if str(item["created_at"]) > doctrine_start
+            and (
+                item["event_type"] in doctrine_event_types
+                or "secure coms" in item["detail"].lower()
+            )
+        ]
+        recent_days = sorted({str(item["created_at"])[:10] for item in doctrine_events})[-7:]
         correction_events = [item for item in timeline if item["event_type"] == "correction_required"]
         self_caught = [item for item in timeline if item["event_type"] == "self_caught"]
-        secure_coms = [item for item in timeline if "secure coms" in item["detail"].lower()]
+        secure_coms = [item for item in timeline if item["event_type"] == "secure_coms" or "secure coms" in item["detail"].lower()]
         task = next((item for item in snapshot["tasks"] if "communication" in item["title"].lower()), None)
         return {
             "status": "evidence_collection",

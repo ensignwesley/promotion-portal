@@ -178,9 +178,32 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("This is not a style guide", body)
         self.assertIn("Correct channel first", body)
         self.assertIn("Score cap</dt><dd>6/10", body)
+        self.assertIn("Evidence days</dt><dd>1", body)
         self.assertIn("Observable evidence", body)
         self.assertIn("Failure modes to watch", body)
         self.assertIn("No premature score lift", body)
+
+    def test_communication_doctrine_evidence_days_ignore_pre_ship_and_non_doctrine_days(self):
+        store = self.server.app.store
+        old_event_id = store.add_timeline_event("captain", "correction_required", "Pre-doctrine correction.")
+        store.add_timeline_event("wesley", "useful_shipped", "Non-doctrine daily ship after doctrine launch.")
+        with store.connect() as con:
+            con.execute(
+                "UPDATE evaluation_timeline SET created_at = ? WHERE id = ?",
+                ("2026-09-02T23:59:59Z", old_event_id),
+            )
+        status, body, _ = self.fetch("/api/status")
+        self.assertEqual(status, 200)
+        summary = json.loads(body)["communication_doctrine"]
+
+        self.assertEqual(summary["evidence_days"], 0)
+
+        store.add_timeline_event("wesley", "secure_coms", "Secure Coms reply delivered with HTTP 201.")
+        status, body, _ = self.fetch("/api/status")
+        self.assertEqual(status, 200)
+        summary = json.loads(body)["communication_doctrine"]
+
+        self.assertEqual(summary["evidence_days"], 1)
 
     def test_evaluation_page_renders_ledger_after_login(self):
         store = self.server.app.store
