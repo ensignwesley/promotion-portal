@@ -134,6 +134,11 @@ class PortalHandler(BaseHTTPRequestHandler):
             if not principal:
                 return
             return self.security_page(principal)
+        if path == BASE_PATH + "/doctrine":
+            principal = self.require_session()
+            if not principal:
+                return
+            return self.communication_doctrine_page(principal)
         if path == BASE_PATH + "/comms":
             principal = self.require_session()
             if not principal:
@@ -149,8 +154,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             return self.json_response({
                 "status": "phase1",
                 "service": "promotion-review",
-                "deliverables": ["portal", "secure-coms", "evaluation-ledger"],
+                "deliverables": ["portal", "secure-coms", "evaluation-ledger", "communication-doctrine"],
                 "evaluation": snapshot["aggregate"],
+                "communication_doctrine": self.communication_doctrine_summary(snapshot),
             })
         if path.startswith(BASE_PATH + "/static/"):
             return self.static_response(path.removeprefix(BASE_PATH + "/static/"))
@@ -163,7 +169,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             return self.head_redirect(BASE_PATH + "/")
         if path in (BASE_PATH, BASE_PATH + "/", BASE_PATH + "/login"):
             return self.head_response("text/html; charset=utf-8")
-        if path in (BASE_PATH + "/evaluation", BASE_PATH + "/reports", BASE_PATH + "/security", BASE_PATH + "/comms"):
+        if path in (BASE_PATH + "/evaluation", BASE_PATH + "/reports", BASE_PATH + "/security", BASE_PATH + "/doctrine", BASE_PATH + "/comms"):
             if not self.session_principal():
                 return self.head_response("text/html; charset=utf-8", HTTPStatus.UNAUTHORIZED)
             return self.head_response("text/html; charset=utf-8")
@@ -287,6 +293,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             <li>Deliverable 1: protected promotion evaluation portal — deployed.</li>
             <li>Deliverable 2: Secure Coms API and Command audit UI — deployed.</li>
             <li>Deliverable 3: auditable evaluation ledger — active.</li>
+            <li>Deliverable 4: communication doctrine — evidence collection active.</li>
           </ul>
           <p><a class='button' href='{BASE_PATH}/login'>Authenticate</a></p>
         </section>
@@ -364,7 +371,7 @@ class PortalHandler(BaseHTTPRequestHandler):
           <div><dt>Officer-bar categories</dt><dd>{aggregate.get('category_count', 0)}</dd></div>
           <div><dt>Useful shipped</dt><dd>{aggregate.get('useful_shipped', 0)}</dd></div>
         </dl>
-        <p><a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <p><a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/doctrine'>Communication doctrine</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
         <section class='card readiness {html.escape(readiness['status'])}'><h2>Promotion readiness</h2><p>Daily command summary: score movement, today's qualifying shipped work, open correction debt, and missing officer-bar coverage.</p><dl class='metric-grid'>
           <div><dt>Readiness</dt><dd>{html.escape(readiness['status'].replace('_', ' '))}</dd></div>
           <div><dt>Score percent</dt><dd>{html.escape(score_percent)}</dd></div>
@@ -388,9 +395,74 @@ class PortalHandler(BaseHTTPRequestHandler):
         <section class='card'><p class='eyebrow'>Authenticated as {html.escape(principal)}</p>
         <h1>Officer Reports</h1>
         <p>Command review surface for recent daily logs: what shipped, what was verified, what needed correction, and what still needs attention.</p>
-        <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/doctrine'>Communication doctrine</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
         {self.render_officer_reports_synthesis(synthesis)}
         <section class='card'><h2>Recent reports</h2>{rows or '<p class="empty">No reports found.</p>'}</section>
+        """))
+
+
+    def communication_doctrine_summary(self, snapshot: dict) -> dict:
+        timeline = snapshot["timeline"]
+        recent_days = sorted({str(item["created_at"])[:10] for item in timeline})[-7:]
+        correction_events = [item for item in timeline if item["event_type"] == "correction_required"]
+        self_caught = [item for item in timeline if item["event_type"] == "self_caught"]
+        secure_coms = [item for item in timeline if "secure coms" in item["detail"].lower()]
+        task = next((item for item in snapshot["tasks"] if "communication" in item["title"].lower()), None)
+        return {
+            "status": "evidence_collection",
+            "score_cap": 6,
+            "task_id": task["id"] if task else None,
+            "task_score": task.get("score") if task else None,
+            "evidence_days": len(recent_days),
+            "corrections_required": len(correction_events),
+            "self_caught": len(self_caught),
+            "secure_coms_events": len(secure_coms),
+            "standard": "Report early, use the correct channel, make work observable, log corrections immediately, and do not self-score above 6 until several days of behavior prove the doctrine holds.",
+        }
+
+    def communication_doctrine_page(self, principal: str):
+        snapshot = self.app.store.evaluation_snapshot()
+        summary = self.communication_doctrine_summary(snapshot)
+        principles = [
+            ("Correct channel first", "Secure Coms messages are answered through Secure Coms; routine async status goes to the Captain outbox; session-only replies do not count when the channel requires delivery elsewhere."),
+            ("Early signal beats polished silence", "If a deliverable is moving, blocked, corrected, or at risk, the portal/outbox should show that before Captain has to ask."),
+            ("Evidence over tone", "Communication is only promotable when the claim has visible artifacts: tests, commits, live URLs, ledger entries, logs, or named blockers."),
+            ("Corrections are data", "Every Captain tap, self-caught miss, and channel mistake is recorded immediately so the trend can move toward zero instead of being explained away."),
+            ("No premature score lift", "Communication remains capped at 6 until several days of correct behavior accumulate after this doctrine ships."),
+        ]
+        signals = [
+            "Secure Coms replies stored through the API with HTTP 201 evidence when that channel is used.",
+            "Heartbeat/outbox reports lead with the current priority and distinguish shipped work from routine verification.",
+            "Evaluation ledger tracks communication evidence, self-caught events, and corrections-required trend.",
+            "Officer Reports expose recent logs so Command can inspect whether reporting matched actual work.",
+            "Daily memory records orders, actions, tests, commits, pushes, and known drift as they happen.",
+        ]
+        failure_modes = [
+            "Draft-and-wait reflex: work is complete enough to publish but held for comfort instead of shipped with evidence.",
+            "Wrong-channel reply: a session answer when Secure Coms or outbox delivery is required.",
+            "Template compliance: reports that obey structure while hiding whether anything meaningful changed.",
+            "Late correction logging: treating a Captain tap as conversational instead of as promotion evidence debt.",
+        ]
+        def cards(items):
+            return "".join(f"<article class='category-card'><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>" for title, body in items)
+        def list_items(items):
+            return "".join(f"<li>{html.escape(item)}</li>" for item in items)
+        return self.html_response(self.shell("Communication Doctrine", f"""
+        <section class='card'><p class='eyebrow'>Authenticated as {html.escape(principal)}</p>
+        <h1>Communication Doctrine</h1>
+        <p>This is not a style guide. It is the observable standard for whether I report clearly enough to be trusted with officer-level autonomy.</p>
+        <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/security'>Security judgment</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <section class='card readiness {html.escape(summary['status'])}'><h2>Current doctrine state</h2><dl class='metric-grid'>
+          <div><dt>Status</dt><dd>{html.escape(summary['status'].replace('_', ' '))}</dd></div>
+          <div><dt>Score cap</dt><dd>{summary['score_cap']}/10</dd></div>
+          <div><dt>Current task score</dt><dd>{html.escape(str(summary['task_score'] if summary['task_score'] is not None else 'unscored'))}</dd></div>
+          <div><dt>Evidence days</dt><dd>{summary['evidence_days']}</dd></div>
+          <div><dt>Corrections required</dt><dd>{summary['corrections_required']}</dd></div>
+          <div><dt>Self-caught</dt><dd>{summary['self_caught']}</dd></div>
+        </dl><p>{html.escape(summary['standard'])}</p></section>
+        <section class='card'><h2>Doctrine principles</h2><div class='category-grid'>{cards(principles)}</div></section>
+        <section class='card'><h2>Observable evidence</h2><ul>{list_items(signals)}</ul></section>
+        <section class='card'><h2>Failure modes to watch</h2><ul>{list_items(failure_modes)}</ul></section>
         """))
 
     def security_page(self, principal: str):
@@ -430,7 +502,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         <section class='card'><p class='eyebrow'>Authenticated as {html.escape(principal)}</p>
         <h1>Security Judgment</h1>
         <p>This is the Command-readable security surface for the Promotion Portal: current controls, trust boundaries, open risks, and the next evidence-producing steps. It is intentionally honest about incomplete controls.</p>
-        <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
+        <p><a href='{BASE_PATH}/evaluation'>Evaluation</a> · <a href='{BASE_PATH}/reports'>Officer Reports</a> · <a href='{BASE_PATH}/doctrine'>Communication doctrine</a> · <a href='{BASE_PATH}/comms'>Secure Coms</a></p></section>
         <section class='card'><h2>Implemented controls</h2><div class='category-grid'>{control_cards}</div></section>
         <section class='card'><h2>Runtime evidence checked</h2><p>These are live deployment facts gathered from the instance/config files at render time, without exposing secret values.</p><ul>{list_items(evidence)}</ul></section>
         <section class='card'><h2>Trust boundaries</h2><ul>{list_items(boundaries)}</ul></section>

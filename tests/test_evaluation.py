@@ -81,12 +81,15 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("application/json", content_type)
         self.assertEqual(payload["status"], "phase1")
+        self.assertIn("communication-doctrine", payload["deliverables"])
         self.assertEqual(payload["evaluation"]["task_count"], 1)
         self.assertEqual(payload["evaluation"]["evidence_count"], 1)
         self.assertEqual(payload["evaluation"]["category_count"], 1)
         self.assertIn("correction_trend", payload["evaluation"])
         self.assertIn("readiness", payload["evaluation"])
         self.assertEqual(payload["evaluation"]["readiness"]["useful_shipped_today"], 0)
+        self.assertEqual(payload["communication_doctrine"]["status"], "evidence_collection")
+        self.assertEqual(payload["communication_doctrine"]["score_cap"], 6)
 
     def test_public_status_matches_phase_one_ledger_state(self):
         store = self.server.app.store
@@ -106,6 +109,7 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("<dt>Corrections required</dt><dd>1</dd>", body)
         self.assertIn("<dt>Officer-bar categories</dt><dd>1</dd>", body)
         self.assertIn("<dt>Useful shipped</dt><dd>1</dd>", body)
+        self.assertIn("Deliverable 4: communication doctrine", body)
 
     def test_head_status_routes_do_not_return_501(self):
         status, _, content_type = self.fetch("/api/status", method="HEAD")
@@ -158,6 +162,25 @@ class EvaluationLedgerTest(unittest.TestCase):
         self.assertIn("nginx deployment marker", body)
         self.assertNotIn("captain_password", body)
         self.assertNotIn("api_token", body)
+
+    def test_communication_doctrine_page_is_protected_and_observable(self):
+        token = self.server.app.security.sign_session("captain")
+        store = self.server.app.store
+        task_id = store.add_task("wesley", "Communication doctrine compliance", "Track proactive reporting discipline, Secure Coms, and corrections.")
+        store.score_task(task_id, "wesley", 6, "self-scored")
+        store.add_timeline_event("captain", "correction_required", "Wrong channel response required correction.")
+        store.add_timeline_event("wesley", "self_caught", "Caught future-dated post before claiming publish.")
+
+        status, body, _ = self.fetch("/doctrine", {"Cookie": f"portal_session={token}"})
+
+        self.assertEqual(status, 200)
+        self.assertIn("Communication Doctrine", body)
+        self.assertIn("This is not a style guide", body)
+        self.assertIn("Correct channel first", body)
+        self.assertIn("Score cap</dt><dd>6/10", body)
+        self.assertIn("Observable evidence", body)
+        self.assertIn("Failure modes to watch", body)
+        self.assertIn("No premature score lift", body)
 
     def test_evaluation_page_renders_ledger_after_login(self):
         store = self.server.app.store
