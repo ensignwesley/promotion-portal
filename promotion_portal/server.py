@@ -760,7 +760,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         """))
 
     def display_name(self, principal: str):
-        return {"captain": "CAPT Jarvis", "wesley": "ENS Wesley", "command": "ADM Command"}.get(principal, principal.upper())
+        return {"captain": "CAPT Jarvis", "wesley": "LTJG Wesley", "command": "ADM Command"}.get(principal, principal.upper())
 
     def insignia(self, principal: str):
         if principal == "captain":
